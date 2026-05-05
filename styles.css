@@ -144,6 +144,7 @@ h1 {
 }
 
 .cell {
+  position: relative;
   background: linear-gradient(145deg, #ffffff, #fff2de);
   border: 1px solid #efcfad;
   border-radius: 10px;
@@ -153,6 +154,46 @@ h1 {
   flex-direction: column;
   gap: 0.3rem;
   animation: reveal 480ms ease both;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.cell--deleting {
+  background: linear-gradient(145deg, #ffe0de, #ffc5c0) !important;
+  border-color: #f25f4c !important;
+  animation: flash-red 700ms ease forwards;
+}
+
+.delete-btn {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #c0392b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+.delete-btn svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  pointer-events: none;
+}
+
+.cell:hover .delete-btn {
+  opacity: 1;
+}
+
+.delete-btn:hover {
+  background: #fde8e6;
 }
 
 .rank {
@@ -190,6 +231,12 @@ h1 {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+@keyframes flash-red {
+  0%   { background: linear-gradient(145deg, #ffe0de, #ffc5c0); border-color: #f25f4c; }
+  60%  { background: linear-gradient(145deg, #ff9e96, #ff7a70); border-color: #c0392b; }
+  100% { background: linear-gradient(145deg, #ffffff, #fff2de); border-color: #efcfad; }
 }
 
 @keyframes settle {

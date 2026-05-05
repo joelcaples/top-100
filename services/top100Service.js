@@ -241,7 +241,7 @@ function getTop100(size = 100) {
 
   const selection = database
     .prepare(
-      "SELECT name, category FROM entries ORDER BY RANDOM() LIMIT ?"
+      "SELECT id, name, category FROM entries ORDER BY RANDOM() LIMIT ?"
     )
     .all(cappedSize);
 
@@ -252,7 +252,16 @@ function getTop100(size = 100) {
   };
 }
 
+function deleteEntry(id) {
+  const database = getDatabase();
+  const result = database
+    .prepare("DELETE FROM entries WHERE id = ?")
+    .run(id);
+  return result.changes > 0;
+}
+
 module.exports = {
   initializeDatabase,
-  getTop100
+  getTop100,
+  deleteEntry
 };
