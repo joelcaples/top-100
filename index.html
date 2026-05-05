@@ -58,6 +58,46 @@
       <section class="grid-wrap" aria-label="ListFlair list">
         <div id="topGrid" class="top-grid"></div>
       </section>
+
+      <div id="editModal" class="detail-modal" hidden>
+        <div class="detail-modal__backdrop" data-modal-close></div>
+        <section
+          class="detail-modal__panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="detailModalTitle"
+        >
+          <button class="detail-modal__close" type="button" data-modal-close aria-label="Close item details">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div class="detail-modal__media">
+            <img id="detailModalImage" class="detail-modal__image" src="/image-loading.svg" alt="Loading item image" />
+          </div>
+          <div class="detail-modal__body">
+            <p id="detailModalRank" class="detail-modal__rank"></p>
+            <h2 id="detailModalTitle" class="detail-modal__title">Item</h2>
+            <p id="detailModalCategory" class="detail-modal__category">Category</p>
+            <div class="detail-modal__fields">
+              <label class="detail-modal__field">
+                <span>Name</span>
+                <input id="detailModalTitleInput" type="text" maxlength="200" />
+              </label>
+              <label class="detail-modal__field">
+                <span>Category</span>
+                <input id="detailModalCategoryInput" type="text" maxlength="80" />
+              </label>
+            </div>
+            <div class="detail-modal__actions" aria-label="Item actions">
+              <button id="modalRefreshBtn" class="detail-action detail-action--refresh" type="button" aria-label="Find image" title="Find image"></button>
+              <button id="modalImageToggleBtn" class="detail-action detail-action--image" type="button" aria-label="Show image" title="Show image"></button>
+              <button id="modalDeleteBtn" class="detail-action detail-action--delete" type="button" aria-label="Delete item" title="Delete item"></button>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="app.js"></script>

@@ -1,8 +1,46 @@
 const topGrid = document.getElementById("topGrid");
 const rerollBtn = document.getElementById("rerollBtn");
 const statusMsg = document.getElementById("statusMsg");
+const editModal = document.getElementById("editModal");
+const detailModalTitle = document.getElementById("detailModalTitle");
+const detailModalRank = document.getElementById("detailModalRank");
+const detailModalCategory = document.getElementById("detailModalCategory");
+const detailModalImage = document.getElementById("detailModalImage");
+const detailModalTitleInput = document.getElementById("detailModalTitleInput");
+const detailModalCategoryInput = document.getElementById("detailModalCategoryInput");
+const modalRefreshBtn = document.getElementById("modalRefreshBtn");
+const modalImageToggleBtn = document.getElementById("modalImageToggleBtn");
+const modalDeleteBtn = document.getElementById("modalDeleteBtn");
 const LOADING_IMAGE_SRC = "/image-loading.svg";
 const imagePolls = new Map();
+const modalState = {
+  cell: null,
+  lastFocus: null,
+  isSaving: false
+};
+
+const modalFocusableSelector =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getDeleteButtonMarkup() {
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14H6L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4h6v2"/>
+    </svg>
+  `;
+}
+
+function getEditButtonMarkup() {
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 20h9"/>
+      <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+    </svg>
+  `;
+}
 
 function getRefreshButtonMarkup() {
   return `
@@ -30,6 +68,10 @@ function getImageButtonMarkup(mode = "image") {
 }
 
 function setImageButtonMode(button, mode) {
+  if (!button) {
+    return;
+  }
+
   button.innerHTML = getImageButtonMarkup(mode);
   if (mode === "text") {
     button.setAttribute("title", "Show text");
@@ -49,6 +91,7 @@ function setRefreshButtonLoading(cell, isLoading) {
 
   refreshBtn.disabled = isLoading;
   cell.classList.toggle("cell--image-loading", isLoading);
+  syncEditModalFromCell(cell);
 }
 
 function getCellMarkup(item, rank) {
@@ -59,17 +102,188 @@ function getCellMarkup(item, rank) {
     <div class="cell-content">
        <img class="cell-image" style="display: none;" src="${item.imageUrl || LOADING_IMAGE_SRC}" alt="Loading" />
     </div>
+    <button class="edit-btn" aria-label="Open details for ${item.name}" title="Edit item">${getEditButtonMarkup()}</button>
     <button class="refresh-btn" aria-label="Refresh image" title="Refresh image">${getRefreshButtonMarkup()}</button>
     <button class="image-btn" aria-label="Show image" title="Show image">${getImageButtonMarkup("image")}</button>
-    <button class="delete-btn" aria-label="Remove ${item.name}" title="Remove">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="3 6 5 6 21 6"/>
-        <path d="M19 6l-1 14H6L5 6"/>
-        <path d="M10 11v6M14 11v6"/>
-        <path d="M9 6V4h6v2"/>
-      </svg>
-    </button>
+    <button class="delete-btn" aria-label="Remove ${item.name}" title="Remove">${getDeleteButtonMarkup()}</button>
   `;
+}
+
+function getCellImageSrc(cell) {
+  const imageSrc = cell.querySelector(".cell-image")?.getAttribute("src") || LOADING_IMAGE_SRC;
+  return imageSrc.includes("image-loading.svg") ? LOADING_IMAGE_SRC : imageSrc;
+}
+
+function syncEditModalFromCell(cell = modalState.cell) {
+  if (!cell || !editModal || editModal.hidden) {
+    return;
+  }
+
+  const title = cell.querySelector(".title")?.textContent?.trim() || "Item";
+  const category = cell.querySelector(".tag")?.textContent?.trim() || "General";
+  const rank = cell.querySelector(".rank")?.textContent?.trim() || "";
+  const isImageMode = cell.classList.contains("cell--image-mode");
+  const isImageLoading = cell.classList.contains("cell--image-loading");
+  const imageSrc = getCellImageSrc(cell);
+
+  detailModalTitle.textContent = title;
+  detailModalRank.textContent = rank;
+  detailModalCategory.textContent = category;
+  detailModalImage.src = imageSrc;
+  detailModalImage.alt = imageSrc === LOADING_IMAGE_SRC ? `Loading image for ${title}` : `Image for ${title}`;
+  if (detailModalTitleInput && document.activeElement !== detailModalTitleInput) {
+    detailModalTitleInput.value = title;
+  }
+  if (detailModalCategoryInput && document.activeElement !== detailModalCategoryInput) {
+    detailModalCategoryInput.value = category;
+  }
+  if (modalDeleteBtn) {
+    modalDeleteBtn.setAttribute("aria-label", `Delete ${title}`);
+    modalDeleteBtn.setAttribute("title", `Delete ${title}`);
+  }
+  if (modalRefreshBtn) {
+    modalRefreshBtn.innerHTML = getRefreshButtonMarkup();
+    modalRefreshBtn.disabled = isImageLoading;
+  }
+  setImageButtonMode(modalImageToggleBtn, isImageMode ? "text" : "image");
+}
+
+function getModalFocusableElements() {
+  if (!editModal || editModal.hidden) {
+    return [];
+  }
+
+  return Array.from(editModal.querySelectorAll(modalFocusableSelector)).filter((el) => {
+    const hiddenByAttr = el.hasAttribute("hidden") || el.getAttribute("aria-hidden") === "true";
+    return !hiddenByAttr && el.offsetParent !== null;
+  });
+}
+
+function trapModalFocus(event) {
+  if (event.key !== "Tab" || !editModal || editModal.hidden) {
+    return;
+  }
+
+  const focusableElements = getModalFocusableElements();
+  if (focusableElements.length === 0) {
+    return;
+  }
+
+  const first = focusableElements[0];
+  const last = focusableElements[focusableElements.length - 1];
+  const active = document.activeElement;
+
+  if (event.shiftKey) {
+    if (active === first || !editModal.contains(active)) {
+      event.preventDefault();
+      last.focus();
+    }
+    return;
+  }
+
+  if (active === last || !editModal.contains(active)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+async function saveModalDetails() {
+  if (!modalState.cell || modalState.isSaving || !detailModalTitleInput || !detailModalCategoryInput) {
+    return;
+  }
+
+  const cell = modalState.cell;
+  const id = cell.dataset.id;
+  const currentName = cell.querySelector(".title")?.textContent?.trim() || "item";
+  const currentCategory = cell.querySelector(".tag")?.textContent?.trim() || "general";
+  const nextName = detailModalTitleInput.value.trim();
+  const nextCategory = detailModalCategoryInput.value.trim() || "general";
+
+  if (!nextName) {
+    detailModalTitleInput.value = currentName;
+    detailModalTitle.textContent = currentName;
+    return;
+  }
+
+  if (nextName === currentName && nextCategory === currentCategory) {
+    return;
+  }
+
+  modalState.isSaving = true;
+
+  try {
+    const response = await fetch(`/api/entries/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nextName, category: nextCategory })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Update failed: ${response.status}`);
+    }
+
+    const titleEl = cell.querySelector(".title");
+    const tagEl = cell.querySelector(".tag");
+    const deleteBtn = cell.querySelector(".delete-btn");
+    const editBtn = cell.querySelector(".edit-btn");
+
+    if (titleEl) {
+      titleEl.textContent = nextName;
+    }
+    if (tagEl) {
+      tagEl.textContent = nextCategory;
+    }
+    if (deleteBtn) {
+      deleteBtn.setAttribute("aria-label", `Remove ${nextName}`);
+    }
+    if (editBtn) {
+      editBtn.setAttribute("aria-label", `Open details for ${nextName}`);
+    }
+
+    syncEditModalFromCell(cell);
+    statusMsg.textContent = "";
+  } catch (error) {
+    console.error("Could not update entry from modal:", error);
+    statusMsg.textContent = "Could not save changes.";
+    syncEditModalFromCell(cell);
+  } finally {
+    modalState.isSaving = false;
+  }
+}
+
+function openEditModal(cell) {
+  if (!editModal) {
+    return;
+  }
+
+  modalState.cell = cell;
+  modalState.lastFocus = document.activeElement;
+  editModal.hidden = false;
+  document.body.classList.add("modal-open");
+  syncEditModalFromCell(cell);
+  if (detailModalTitleInput) {
+    detailModalTitleInput.focus();
+    detailModalTitleInput.setSelectionRange(0, detailModalTitleInput.value.length);
+  } else {
+    editModal.querySelector("[data-modal-close]")?.focus();
+  }
+}
+
+function closeEditModal() {
+  if (!editModal || editModal.hidden) {
+    return;
+  }
+
+  editModal.hidden = true;
+  document.body.classList.remove("modal-open");
+
+  const focusTarget = modalState.lastFocus;
+  modalState.cell = null;
+  modalState.lastFocus = null;
+
+  if (focusTarget && document.contains(focusTarget)) {
+    focusTarget.focus();
+  }
 }
 
 function showImageMode(cell, imageUrl = LOADING_IMAGE_SRC) {
@@ -84,6 +298,7 @@ function showImageMode(cell, imageUrl = LOADING_IMAGE_SRC) {
   content.style.display = "flex";
   cell.classList.add("cell--image-mode");
   setImageButtonMode(imageBtn, "text");
+  syncEditModalFromCell(cell);
 }
 
 function hideImageMode(cell) {
@@ -95,6 +310,7 @@ function hideImageMode(cell) {
   content.style.display = "none";
   cell.classList.remove("cell--image-mode");
   setImageButtonMode(imageBtn, "image");
+  syncEditModalFromCell(cell);
 }
 
 function wait(ms) {
@@ -203,7 +419,68 @@ async function ensureEntryImage(cell, { forceRefresh = false } = {}) {
   }
 }
 
+async function handleRefreshAction(cell) {
+  if (!cell || cell.classList.contains("cell--add")) {
+    return;
+  }
+
+  await ensureEntryImage(cell, { forceRefresh: true });
+}
+
+async function handleImageToggleAction(cell) {
+  if (!cell || cell.classList.contains("cell--add")) {
+    return;
+  }
+
+  if (cell.classList.contains("cell--image-mode")) {
+    hideImageMode(cell);
+    return;
+  }
+
+  await ensureEntryImage(cell);
+}
+
+async function handleDeleteAction(cell, trigger) {
+  if (!cell) {
+    return;
+  }
+
+  const button = trigger || cell.querySelector(".delete-btn");
+  if (button) {
+    button.disabled = true;
+  }
+  if (modalDeleteBtn && modalState.cell === cell) {
+    modalDeleteBtn.disabled = true;
+  }
+  cell.classList.add("cell--deleting");
+
+  try {
+    const response = await fetch(`/api/entries/${cell.dataset.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      throw new Error(`Delete failed: ${response.status}`);
+    }
+
+    if (modalState.cell === cell) {
+      closeEditModal();
+    }
+
+    window.setTimeout(() => cell.remove(), 700);
+  } catch (error) {
+    console.error("Could not delete entry:", error);
+    window.setTimeout(() => {
+      cell.classList.remove("cell--deleting");
+      if (button) {
+        button.disabled = false;
+      }
+      if (modalDeleteBtn) {
+        modalDeleteBtn.disabled = false;
+      }
+    }, 700);
+  }
+}
+
 function renderListflair(selection, totalEntries) {
+  closeEditModal();
   topGrid.innerHTML = selection
     .map(
       (item, index) => `
@@ -360,6 +637,15 @@ function renderAddCell() {
 }
 
 topGrid.addEventListener("click", async (event) => {
+  const editBtn = event.target.closest(".edit-btn");
+  if (editBtn) {
+    const cell = editBtn.closest(".cell");
+    if (cell && !cell.classList.contains("cell--add")) {
+      openEditModal(cell);
+    }
+    return;
+  }
+
   // Handle title editing
   const titleEl = event.target.closest(".title");
   if (titleEl && !titleEl.querySelector("input")) {
@@ -512,9 +798,7 @@ topGrid.addEventListener("click", async (event) => {
   const refreshBtn = event.target.closest(".refresh-btn");
   if (refreshBtn) {
     const cell = refreshBtn.closest(".cell");
-    if (cell && !cell.classList.contains("cell--add")) {
-      ensureEntryImage(cell, { forceRefresh: true });
-    }
+    await handleRefreshAction(cell);
     return;
   }
 
@@ -522,13 +806,7 @@ topGrid.addEventListener("click", async (event) => {
   const imageBtn = event.target.closest(".image-btn");
   if (imageBtn) {
     const cell = imageBtn.closest(".cell");
-    if (cell && !cell.classList.contains("cell--add")) {
-      if (cell.classList.contains("cell--image-mode")) {
-        hideImageMode(cell);
-      } else {
-        ensureEntryImage(cell);
-      }
-    }
+    await handleImageToggleAction(cell);
     return;
   }
 
@@ -538,22 +816,25 @@ topGrid.addEventListener("click", async (event) => {
   const cell = btn.closest(".cell");
   if (!cell) return;
 
-  const id = cell.dataset.id;
-  btn.disabled = true;
-  cell.classList.add("cell--deleting");
-
-  try {
-    const response = await fetch(`/api/entries/${id}`, { method: "DELETE" });
-    if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
-    setTimeout(() => cell.remove(), 700);
-  } catch (err) {
-    console.error("Could not delete entry:", err);
-    setTimeout(() => {
-      cell.classList.remove("cell--deleting");
-      btn.disabled = false;
-    }, 700);
-  }
+  await handleDeleteAction(cell, btn);
 });
+
+if (editModal) {
+  editModal.addEventListener("click", (event) => {
+    if (event.target.closest("[data-modal-close]")) {
+      closeEditModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !editModal.hidden) {
+      closeEditModal();
+      return;
+    }
+
+    trapModalFocus(event);
+  });
+}
 
 async function fetchListflair() {
   if (rerollBtn) {
@@ -588,6 +869,77 @@ async function fetchListflair() {
 
 const installBtn = document.getElementById("installBtn");
 let deferredInstallPrompt;
+
+if (modalRefreshBtn) {
+  modalRefreshBtn.innerHTML = getRefreshButtonMarkup();
+  modalRefreshBtn.addEventListener("click", async () => {
+    await handleRefreshAction(modalState.cell);
+  });
+}
+
+if (modalImageToggleBtn) {
+  setImageButtonMode(modalImageToggleBtn, "image");
+  modalImageToggleBtn.addEventListener("click", async () => {
+    await handleImageToggleAction(modalState.cell);
+  });
+}
+
+if (modalDeleteBtn) {
+  modalDeleteBtn.innerHTML = getDeleteButtonMarkup();
+  modalDeleteBtn.addEventListener("click", async () => {
+    await handleDeleteAction(modalState.cell, modalDeleteBtn);
+  });
+}
+
+if (detailModalTitleInput) {
+  detailModalTitleInput.addEventListener("input", () => {
+    const preview = detailModalTitleInput.value.trim();
+    detailModalTitle.textContent = preview || "Item";
+  });
+
+  detailModalTitleInput.addEventListener("blur", () => {
+    saveModalDetails();
+  });
+
+  detailModalTitleInput.addEventListener("keydown", async (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      await saveModalDetails();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      syncEditModalFromCell(modalState.cell);
+      detailModalTitleInput.setSelectionRange(0, detailModalTitleInput.value.length);
+    }
+  });
+}
+
+if (detailModalCategoryInput) {
+  detailModalCategoryInput.addEventListener("input", () => {
+    const preview = detailModalCategoryInput.value.trim();
+    detailModalCategory.textContent = preview || "General";
+  });
+
+  detailModalCategoryInput.addEventListener("blur", () => {
+    saveModalDetails();
+  });
+
+  detailModalCategoryInput.addEventListener("keydown", async (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      await saveModalDetails();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      syncEditModalFromCell(modalState.cell);
+      detailModalCategoryInput.setSelectionRange(0, detailModalCategoryInput.value.length);
+    }
+  });
+}
 
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
