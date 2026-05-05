@@ -257,8 +257,8 @@ async function cacheImageLocally(entry, rankedCandidate) {
   const transformedBuffer = await sharp(imageBuffer)
     .rotate()
     .resize(OUTPUT_WIDTH, OUTPUT_HEIGHT, {
-      fit: "cover",
-      position: "attention"
+      fit: "inside",
+      withoutEnlargement: true
     })
     .jpeg({ quality: 82, mozjpeg: true })
     .toBuffer();

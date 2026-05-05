@@ -584,13 +584,15 @@ async function handlePickImage(btn) {
   const thumbnailUrl = btn.dataset.thumbnailUrl;
   const sourceUrl = btn.dataset.sourceUrl;
   const query = btn.dataset.query || "";
+  const previousSrc = getCellImageSrc(cell);
 
   const thumbs = modalSearchResults?.querySelectorAll(".detail-modal__search-thumb");
   thumbs?.forEach((t) => {
     t.disabled = true;
   });
   btn.classList.add("detail-modal__search-thumb--loading");
-  showImageMode(cell, LOADING_IMAGE_SRC);
+  // Show the selected candidate immediately so the modal reflects the user's choice.
+  showImageMode(cell, fetchUrl || thumbnailUrl || LOADING_IMAGE_SRC);
 
   try {
     const response = await fetch(`/api/entries/${id}/image/pick`, {
@@ -607,10 +609,16 @@ async function handlePickImage(btn) {
     if (payload.imageUrl) {
       showImageMode(cell, payload.imageUrl);
     }
+    statusMsg.textContent = "";
   } catch (err) {
     console.error("Could not pick image:", err);
     statusMsg.textContent = "Could not use that image. Try another.";
-    hideImageMode(cell);
+    if (previousSrc && previousSrc !== LOADING_IMAGE_SRC) {
+      showImageMode(cell, previousSrc);
+    } else {
+      hideImageMode(cell);
+    }
+  } finally {
     thumbs?.forEach((t) => {
       t.disabled = false;
     });
