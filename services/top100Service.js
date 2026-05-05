@@ -216,28 +216,16 @@ function initializeDatabase() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
-
-  const existingCount = database
-    .prepare("SELECT COUNT(1) AS count FROM entries")
-    .get().count;
-
-  if (existingCount === 0) {
-    const insertEntry = database.prepare(
-      "INSERT INTO entries (name, category) VALUES (?, ?)"
-    );
-    const seedEntries = database.transaction((items) => {
-      for (const item of items) {
-        insertEntry.run(item.name, item.category);
-      }
-    });
-    seedEntries(ITEM_POOL);
-  }
 }
 
 function getTop100(size = 100) {
   const normalized = Number.isNaN(Number(size)) ? 100 : Number(size);
   const cappedSize = Math.max(1, Math.min(normalized, 100));
   const database = getDatabase();
+
+  const totalEntries = database
+    .prepare("SELECT COUNT(1) AS count FROM entries")
+    .get().count;
 
   const selection = database
     .prepare(
@@ -248,6 +236,7 @@ function getTop100(size = 100) {
   return {
     generatedAt: new Date().toISOString(),
     count: selection.length,
+    totalEntries,
     items: selection
   };
 }
@@ -260,8 +249,26 @@ function deleteEntry(id) {
   return result.changes > 0;
 }
 
+function addEntry(name, category) {
+  const database = getDatabase();
+  const result = database
+    .prepare("INSERT INTO entries (name, category) VALUES (?, ?)")
+    .run(name, category);
+  return { id: result.lastInsertRowid, name, category };
+}
+
+function updateEntry(id, name, category) {
+  const database = getDatabase();
+  const result = database
+    .prepare("UPDATE entries SET name = ?, category = ? WHERE id = ?")
+    .run(name, category, id);
+  return result.changes > 0 ? { id, name, category } : null;
+}
+
 module.exports = {
   initializeDatabase,
   getTop100,
-  deleteEntry
+  deleteEntry,
+  addEntry,
+  updateEntry
 };
