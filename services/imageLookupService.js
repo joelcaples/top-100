@@ -351,8 +351,45 @@ async function removeCachedImage(imageUrl) {
   }
 }
 
+async function searchImagesByQuery(query) {
+  const response = await fetch(
+    `${OPENVERSE_API_URL}?q=${encodeURIComponent(query)}&page_size=${IMAGE_PAGE_SIZE}`,
+    {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "listflair-app/1.0"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Openverse search failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  return (payload.results || [])
+    .filter((r) => r.thumbnail || r.url)
+    .map((r) => ({
+      title: r.title || "",
+      thumbnailUrl: r.thumbnail || r.url,
+      fetchUrl: r.url || r.thumbnail,
+      sourceUrl: r.foreign_landing_url || r.url || null
+    }));
+}
+
+async function cacheSelectedImage(entry, { fetchUrl, thumbnailUrl, sourceUrl, query }) {
+  return cacheImageLocally(entry, {
+    fetchUrl,
+    thumbnailUrl: thumbnailUrl || fetchUrl,
+    sourceUrl: sourceUrl || null,
+    query: query || ""
+  });
+}
+
 module.exports = {
   findAndCacheImageForEntry,
+  searchImagesByQuery,
+  cacheSelectedImage,
   isGeneratedImageUrl,
   removeCachedImage,
   GENERATED_IMAGE_DIR,

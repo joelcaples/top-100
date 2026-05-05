@@ -11,6 +11,10 @@ const detailModalCategoryInput = document.getElementById("detailModalCategoryInp
 const modalRefreshBtn = document.getElementById("modalRefreshBtn");
 const modalImageToggleBtn = document.getElementById("modalImageToggleBtn");
 const modalDeleteBtn = document.getElementById("modalDeleteBtn");
+const modalSearchBtn = document.getElementById("modalSearchBtn");
+const modalSearchPanel = document.getElementById("modalSearchPanel");
+const modalSearchInput = document.getElementById("modalSearchInput");
+const modalSearchResults = document.getElementById("modalSearchResults");
 const LOADING_IMAGE_SRC = "/image-loading.svg";
 const imagePolls = new Map();
 const modalState = {
@@ -56,6 +60,23 @@ function getRefreshButtonMarkup() {
       <path d="M20.5 15a9 9 0 0 1-14.13 3.36L1 14"/>
     </svg>
   `;
+}
+
+function getSearchButtonMarkup() {
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8"/>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+  `;
+}
+
+function escapeAttr(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function getImageButtonMarkup(mode = "image") {
@@ -281,6 +302,19 @@ function closeEditModal() {
   editModal.hidden = true;
   document.body.classList.remove("modal-open");
 
+  if (modalSearchPanel) {
+    modalSearchPanel.hidden = true;
+    if (modalSearchInput) {
+      modalSearchInput.value = "";
+    }
+    if (modalSearchResults) {
+      modalSearchResults.innerHTML = "";
+    }
+  }
+  if (modalSearchBtn) {
+    modalSearchBtn.setAttribute("aria-expanded", "false");
+  }
+
   const focusTarget = modalState.lastFocus;
   modalState.cell = null;
   modalState.lastFocus = null;
@@ -480,6 +514,127 @@ async function handleDeleteAction(cell, trigger) {
         modalDeleteBtn.disabled = false;
       }
     }, 700);
+  }
+}
+
+function toggleSearchPanel() {
+  if (!modalSearchPanel || !modalSearchBtn) {
+    return;
+  }
+
+  const isOpen = !modalSearchPanel.hidden;
+  modalSearchPanel.hidden = isOpen;
+  modalSearchBtn.setAttribute("aria-expanded", String(!isOpen));
+
+  if (!isOpen && modalSearchInput) {
+    const name = modalState.cell?.querySelector(".title")?.textContent?.trim() || "";
+    modalSearchInput.value = name;
+    modalSearchInput.focus();
+    modalSearchInput.setSelectionRange(0, modalSearchInput.value.length);
+  }
+}
+
+async function performImageSearch() {
+  if (!modalState.cell || !modalSearchInput || !modalSearchResults) {
+    return;
+  }
+
+  const q = modalSearchInput.value.trim();
+  if (!q) {
+    return;
+  }
+
+  const id = modalState.cell.dataset.id;
+  modalSearchResults.innerHTML = '<p class="detail-modal__search-status">Searching…</p>';
+
+  try {
+    const response = await fetch(`/api/entries/${id}/image/search?q=${encodeURIComponent(q)}`, {
+      headers: { Accept: "application/json" }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.status}`);
+    }
+
+    const { results } = await response.json();
+
+    if (!results.length) {
+      modalSearchResults.innerHTML = '<p class="detail-modal__search-status">No images found.</p>';
+      return;
+    }
+
+    modalSearchResults.innerHTML = results
+      .map(
+        (r, i) => `
+          <button
+            class="detail-modal__search-thumb"
+            type="button"
+            data-fetch-url="${escapeAttr(r.fetchUrl)}"
+            data-thumbnail-url="${escapeAttr(r.thumbnailUrl || r.fetchUrl)}"
+            data-source-url="${escapeAttr(r.sourceUrl || "")}"
+            data-query="${escapeAttr(q)}"
+            aria-label="${escapeAttr(r.title ? r.title.slice(0, 80) : `Image result ${i + 1}`)}"
+            title="${escapeAttr(r.title ? r.title.slice(0, 120) : "")}"
+          >
+            <img src="${escapeAttr(r.thumbnailUrl || r.fetchUrl)}" alt="" loading="lazy" />
+          </button>
+        `
+      )
+      .join("");
+  } catch (err) {
+    console.error("Image search failed:", err);
+    modalSearchResults.innerHTML = '<p class="detail-modal__search-status">Search failed. Try again.</p>';
+  }
+}
+
+async function handlePickImage(btn) {
+  const cell = modalState.cell;
+  if (!cell || !btn) {
+    return;
+  }
+
+  const id = cell.dataset.id;
+  const fetchUrl = btn.dataset.fetchUrl;
+  const thumbnailUrl = btn.dataset.thumbnailUrl;
+  const sourceUrl = btn.dataset.sourceUrl;
+  const query = btn.dataset.query || "";
+
+  const thumbs = modalSearchResults?.querySelectorAll(".detail-modal__search-thumb");
+  thumbs?.forEach((t) => {
+    t.disabled = true;
+  });
+  btn.classList.add("detail-modal__search-thumb--loading");
+  showImageMode(cell, LOADING_IMAGE_SRC);
+
+  try {
+    const response = await fetch(`/api/entries/${id}/image/pick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ fetchUrl, thumbnailUrl, sourceUrl, query })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Pick failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (payload.imageUrl) {
+      showImageMode(cell, payload.imageUrl);
+      if (modalSearchPanel) {
+        modalSearchPanel.hidden = true;
+      }
+      if (modalSearchBtn) {
+        modalSearchBtn.setAttribute("aria-expanded", "false");
+      }
+    }
+  } catch (err) {
+    console.error("Could not pick image:", err);
+    statusMsg.textContent = "Could not use that image. Try another.";
+    hideImageMode(cell);
+    thumbs?.forEach((t) => {
+      t.disabled = false;
+    });
+    btn.classList.remove("detail-modal__search-thumb--loading");
   }
 }
 
@@ -845,6 +1000,34 @@ if (modalDeleteBtn) {
   modalDeleteBtn.innerHTML = getDeleteButtonMarkup();
   modalDeleteBtn.addEventListener("click", async () => {
     await handleDeleteAction(modalState.cell, modalDeleteBtn);
+  });
+}
+
+if (modalSearchBtn) {
+  modalSearchBtn.innerHTML = getSearchButtonMarkup();
+  modalSearchBtn.addEventListener("click", toggleSearchPanel);
+}
+
+if (modalSearchInput) {
+  modalSearchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      performImageSearch();
+    }
+  });
+}
+
+const modalSearchSubmit = document.getElementById("modalSearchSubmit");
+if (modalSearchSubmit) {
+  modalSearchSubmit.addEventListener("click", performImageSearch);
+}
+
+if (modalSearchResults) {
+  modalSearchResults.addEventListener("click", (event) => {
+    const thumb = event.target.closest(".detail-modal__search-thumb");
+    if (thumb && !thumb.disabled) {
+      handlePickImage(thumb);
+    }
   });
 }
 

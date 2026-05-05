@@ -15,6 +15,8 @@ const {
 } = require("./services/listflairService");
 const {
   findAndCacheImageForEntry,
+  searchImagesByQuery,
+  cacheSelectedImage,
   removeCachedImage,
   GENERATED_IMAGE_DIR
 } = require("./services/imageLookupService");
@@ -184,6 +186,26 @@ app.patch("/api/entries/:id", async (req, res) => {
   res.json(updated);
 });
 
+app.get("/api/entries/:id/image/search", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 200) : "";
+  if (!q) {
+    return res.status(400).json({ error: "q is required" });
+  }
+
+  const entry = await getEntry(id);
+  if (!entry) {
+    return res.status(404).json({ error: "Entry not found" });
+  }
+
+  const results = await searchImagesByQuery(q);
+  res.json({ results });
+});
+
 app.get("/api/entries/:id/image", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id < 1) {
@@ -241,6 +263,48 @@ app.post("/api/entries/:id/image/refresh", async (req, res) => {
   startImageLookup(id);
   const loadingEntry = await getEntry(id);
   return sendImagePayload(res, loadingEntry, 202);
+});
+
+app.post("/api/entries/:id/image/pick", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  const { fetchUrl, thumbnailUrl, sourceUrl, query } = req.body || {};
+  if (!fetchUrl || typeof fetchUrl !== "string") {
+    return res.status(400).json({ error: "fetchUrl is required" });
+  }
+  if (!fetchUrl.startsWith("https://")) {
+    return res.status(400).json({ error: "fetchUrl must use https" });
+  }
+
+  const entry = await getEntry(id);
+  if (!entry) {
+    return res.status(404).json({ error: "Entry not found" });
+  }
+
+  const previousImageUrl = entry.imageUrl;
+  try {
+    const cached = await cacheSelectedImage(entry, {
+      fetchUrl,
+      thumbnailUrl: typeof thumbnailUrl === "string" ? thumbnailUrl : fetchUrl,
+      sourceUrl: typeof sourceUrl === "string" ? sourceUrl : null,
+      query: typeof query === "string" ? query.slice(0, 500) : ""
+    });
+
+    await setEntryImageReady(id, cached.imageUrl, cached.imageSource, cached.imageQuery, 0);
+
+    if (previousImageUrl && previousImageUrl !== cached.imageUrl) {
+      await removeCachedImage(previousImageUrl);
+    }
+
+    const updatedEntry = await getEntry(id);
+    return sendImagePayload(res, updatedEntry);
+  } catch (error) {
+    await setEntryImageError(id, error.message);
+    return res.status(500).json({ error: "Could not cache the selected image" });
+  }
 });
 
 async function startServer() {
