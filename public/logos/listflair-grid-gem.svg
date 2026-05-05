@@ -1,0 +1,15 @@
+<svg width="960" height="540" viewBox="0 0 960 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="540" fill="#111111"/>
+  <g transform="translate(126 110)">
+    <rect x="0" y="0" width="240" height="240" rx="18" stroke="#D4AF37" stroke-width="3"/>
+    <g stroke="#7A6A3F" stroke-width="1.5" opacity="0.75">
+      <path d="M24 0V240"/><path d="M48 0V240"/><path d="M72 0V240"/><path d="M96 0V240"/><path d="M120 0V240"/><path d="M144 0V240"/><path d="M168 0V240"/><path d="M192 0V240"/><path d="M216 0V240"/>
+      <path d="M0 24H240"/><path d="M0 48H240"/><path d="M0 72H240"/><path d="M0 96H240"/><path d="M0 120H240"/><path d="M0 144H240"/><path d="M0 168H240"/><path d="M0 192H240"/><path d="M0 216H240"/>
+    </g>
+    <rect x="96" y="72" width="48" height="48" transform="rotate(45 96 72)" fill="#F0D48A"/>
+  </g>
+  <text x="422" y="248" fill="#F4E7C8" font-size="106" font-family="Georgia, 'Times New Roman', serif" letter-spacing="3">ListFlair</text>
+  <text x="428" y="300" fill="#D4AF37" font-size="28" font-family="Verdana, Geneva, sans-serif" letter-spacing="8">ONE PICK GETS THE SPOTLIGHT</text>
+  <path d="M425 326H780" stroke="#D4AF37" stroke-width="3" opacity="0.6"/>
+  <path d="M425 344H706" stroke="#D4AF37" stroke-width="1.5" opacity="0.35"/>
+</svg>

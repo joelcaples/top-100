@@ -1,0 +1,13 @@
+project_name          = "listflair"
+environment           = "prod"
+location              = "eastus"
+app_service_sku_name  = "B1"
+node_version          = "20-lts"
+sql_admin_username    = "sqladminuser"
+storage_container_name = "generated-images"
+
+tags = {
+  managed_by = "terraform"
+  app        = "listflair"
+  environment = "prod"
+}

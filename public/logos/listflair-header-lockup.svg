@@ -1,0 +1,13 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" rx="24" fill="#0D1117"/>
+  <rect x="28" y="28" width="1144" height="264" rx="20" stroke="#B68B3A" stroke-width="3" opacity="0.78"/>
+  <path d="M186 60L150 152H222L186 60Z" fill="#B68B3A" opacity="0.62"/>
+  <path d="M186 60L84 170" stroke="#B68B3A" stroke-width="2" opacity="0.42"/>
+  <path d="M186 60L124 170" stroke="#B68B3A" stroke-width="2" opacity="0.42"/>
+  <path d="M186 60L248 170" stroke="#B68B3A" stroke-width="2" opacity="0.42"/>
+  <path d="M186 60L288 170" stroke="#B68B3A" stroke-width="2" opacity="0.42"/>
+  <path d="M88 202H312" stroke="#B68B3A" stroke-width="2" opacity="0.58"/>
+  <path d="M104 220H296" stroke="#B68B3A" stroke-width="1.5" opacity="0.28"/>
+  <text x="356" y="164" fill="#F5ECD9" font-size="118" font-family="Georgia, 'Times New Roman', serif" letter-spacing="4">List<tspan fill="#D9A441">F</tspan>lair</text>
+  <text x="362" y="228" fill="#D9A441" font-size="30" font-family="Verdana, Geneva, sans-serif" letter-spacing="7">CURATE. RANK. REVEAL.</text>
+</svg>

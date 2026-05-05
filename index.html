@@ -3,13 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Top 100 Everything</title>
+    <title>ListFlair</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Jost:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
+    <link rel="icon" type="image/svg+xml" href="public/logos/listflair-favicon.svg" />
+    <link rel="shortcut icon" href="public/logos/listflair-favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="public/logos/listflair-favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="public/logos/listflair-apple-touch-icon.png" />
+    <link rel="manifest" href="public/site.webmanifest" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta property="og:title" content="ListFlair" />
+    <meta property="og:description" content="Curate. Rank. Reveal." />
+    <meta property="og:url" content="__SITE_ORIGIN__/" />
+    <meta property="og:image" content="__SITE_ORIGIN__/public/logos/listflair-social-share.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ListFlair" />
+    <meta name="twitter:description" content="Curate. Rank. Reveal." />
+    <meta name="twitter:image" content="__SITE_ORIGIN__/public/logos/listflair-social-share.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -18,17 +35,26 @@
 
     <main class="app-shell">
       <header class="hero">
-        <p class="kicker">Theme</p>
-        <h1>The Top 100 Everything</h1>
+        <h1 class="visually-hidden">ListFlair</h1>
+        <img
+          class="hero-logo"
+          src="public/logos/listflair-header-lockup-tight.svg"
+          alt="ListFlair"
+          width="1200"
+          height="280"
+        />
         <p class="subtitle">
-          A random board of 100 cool picks from music, movies, sports,
+          A living board of standout picks from music, movies, sports,
           entertainment, politics, tech, culture, science, and beyond.
         </p>
         <p id="statusMsg" class="status" aria-live="polite"></p>
-        <button id="rerollBtn" type="button">Remix the 100</button>
+        <div class="hero-actions">
+          <button id="rerollBtn" type="button">Remix ListFlair</button>
+          <button id="installBtn" type="button" hidden>Install App</button>
+        </div>
       </header>
 
-      <section class="grid-wrap" aria-label="Top 100 list">
+      <section class="grid-wrap" aria-label="ListFlair list">
         <div id="topGrid" class="top-grid"></div>
       </section>
     </main>

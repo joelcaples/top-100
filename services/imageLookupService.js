@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { BlobServiceClient } = require("@azure/storage-blob");
 const sharp = require("sharp");
 
 const GENERATED_IMAGE_DIR = path.join(__dirname, "..", "data", "generated-images");
@@ -9,6 +10,9 @@ const OPENVERSE_API_URL = "https://api.openverse.org/v1/images/";
 const IMAGE_PAGE_SIZE = 16;
 const OUTPUT_WIDTH = 640;
 const OUTPUT_HEIGHT = 480;
+const STORAGE_CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING;
+const STORAGE_CONTAINER = process.env.AZURE_STORAGE_CONTAINER || "generated-images";
+const USE_BLOB_STORAGE = Boolean(STORAGE_CONNECTION_STRING);
 const CATEGORY_QUERY_HINTS = {
   music: ["band", "musician", "logo", "album cover"],
   movies: ["film", "poster", "still"],
@@ -17,6 +21,24 @@ const CATEGORY_QUERY_HINTS = {
 };
 
 const GENERIC_STOCK_TERMS = /(stock|vector|illustration|clipart|template|background)/;
+let containerClientPromise;
+
+async function getContainerClient() {
+  if (!USE_BLOB_STORAGE) {
+    return null;
+  }
+
+  if (!containerClientPromise) {
+    containerClientPromise = (async () => {
+      const blobServiceClient = BlobServiceClient.fromConnectionString(STORAGE_CONNECTION_STRING);
+      const containerClient = blobServiceClient.getContainerClient(STORAGE_CONTAINER);
+      await containerClient.createIfNotExists({ access: "blob" });
+      return containerClient;
+    })();
+  }
+
+  return containerClientPromise;
+}
 
 function buildQueries(entry) {
   const queries = new Set();
@@ -162,7 +184,7 @@ async function searchOpenverse(entry) {
       {
         headers: {
           Accept: "application/json",
-          "User-Agent": "top-100-app/1.0"
+          "User-Agent": "listflair-app/1.0"
         }
       }
     );
@@ -203,7 +225,7 @@ async function downloadBuffer(url) {
   const response = await fetch(url, {
     headers: {
       Accept: "image/*",
-      "User-Agent": "top-100-app/1.0"
+      "User-Agent": "listflair-app/1.0"
     }
   });
 
@@ -216,8 +238,6 @@ async function downloadBuffer(url) {
 }
 
 async function cacheImageLocally(entry, rankedCandidate) {
-  await ensureGeneratedImageDir();
-
   let imageBuffer;
   try {
     imageBuffer = await downloadBuffer(rankedCandidate.fetchUrl);
@@ -234,16 +254,32 @@ async function cacheImageLocally(entry, rankedCandidate) {
     .digest("hex")
     .slice(0, 12);
   const fileName = `${entry.id}-${fileHash}.jpg`;
-  const filePath = path.join(GENERATED_IMAGE_DIR, fileName);
-
-  await sharp(imageBuffer)
+  const transformedBuffer = await sharp(imageBuffer)
     .rotate()
     .resize(OUTPUT_WIDTH, OUTPUT_HEIGHT, {
       fit: "cover",
       position: "attention"
     })
     .jpeg({ quality: 82, mozjpeg: true })
-    .toFile(filePath);
+    .toBuffer();
+
+  if (USE_BLOB_STORAGE) {
+    const containerClient = await getContainerClient();
+    const blobClient = containerClient.getBlockBlobClient(fileName);
+    await blobClient.uploadData(transformedBuffer, {
+      blobHTTPHeaders: { blobContentType: "image/jpeg" }
+    });
+
+    return {
+      imageUrl: blobClient.url,
+      imageSource: rankedCandidate.sourceUrl,
+      imageQuery: rankedCandidate.query
+    };
+  }
+
+  await ensureGeneratedImageDir();
+  const filePath = path.join(GENERATED_IMAGE_DIR, fileName);
+  await fs.promises.writeFile(filePath, transformedBuffer);
 
   return {
     imageUrl: `${GENERATED_IMAGE_URL_PREFIX}/${fileName}`,
@@ -269,11 +305,39 @@ async function findAndCacheImageForEntry(entry, resultIndex = 0) {
 }
 
 function isGeneratedImageUrl(imageUrl) {
-  return typeof imageUrl === "string" && imageUrl.startsWith(`${GENERATED_IMAGE_URL_PREFIX}/`);
+  if (typeof imageUrl !== "string") {
+    return false;
+  }
+
+  if (imageUrl.startsWith(`${GENERATED_IMAGE_URL_PREFIX}/`)) {
+    return true;
+  }
+
+  if (USE_BLOB_STORAGE) {
+    return imageUrl.includes(`/${STORAGE_CONTAINER}/`);
+  }
+
+  return false;
 }
 
 async function removeCachedImage(imageUrl) {
   if (!isGeneratedImageUrl(imageUrl)) {
+    return;
+  }
+
+  if (USE_BLOB_STORAGE && imageUrl.startsWith("http")) {
+    const url = new URL(imageUrl);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const containerIndex = pathParts.findIndex((part) => part === STORAGE_CONTAINER);
+    if (containerIndex >= 0 && pathParts.length > containerIndex + 1) {
+      const blobName = pathParts.slice(containerIndex + 1).join("/");
+      const containerClient = await getContainerClient();
+      await containerClient.deleteBlob(blobName, { deleteSnapshots: "include" }).catch((error) => {
+        if (error.statusCode !== 404) {
+          throw error;
+        }
+      });
+    }
     return;
   }
 

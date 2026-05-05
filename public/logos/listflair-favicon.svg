@@ -1,0 +1,11 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="14" fill="#0D1117"/>
+  <rect x="4" y="4" width="56" height="56" rx="11" stroke="#D9A441" stroke-width="2" opacity="0.85"/>
+  <path d="M32 9L25.5 26H38.5L32 9Z" fill="#D9A441" opacity="0.8"/>
+  <path d="M32 9L16 28" stroke="#D9A441" stroke-width="1.75" opacity="0.45"/>
+  <path d="M32 9L23 28" stroke="#D9A441" stroke-width="1.75" opacity="0.45"/>
+  <path d="M32 9L41 28" stroke="#D9A441" stroke-width="1.75" opacity="0.45"/>
+  <path d="M32 9L48 28" stroke="#D9A441" stroke-width="1.75" opacity="0.45"/>
+  <path d="M18 35H46" stroke="#D9A441" stroke-width="1.75" opacity="0.55"/>
+  <text x="19" y="51" fill="#F5ECD9" font-size="23" font-family="Georgia, 'Times New Roman', serif" font-weight="700" letter-spacing="1">L<tspan fill="#D9A441">F</tspan></text>
+</svg>

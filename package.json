@@ -1,7 +1,7 @@
 {
-  "name": "top-100",
+  "name": "listflair",
   "version": "1.0.0",
-  "description": "The Top 100 Everything web app with API-backed data service",
+  "description": "ListFlair web app with API-backed data service",
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",
@@ -9,18 +9,23 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/joelcaples/top-100.git"
+    "url": "git+https://github.com/joelcaples/listflair.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/joelcaples/top-100/issues"
+    "url": "https://github.com/joelcaples/listflair/issues"
   },
-  "homepage": "https://github.com/joelcaples/top-100#readme",
+  "homepage": "https://github.com/joelcaples/listflair#readme",
   "dependencies": {
+    "@azure/storage-blob": "^12.31.0",
     "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",
+    "mssql": "^12.5.2",
     "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "png-to-ico": "^3.0.1"
   }
 }

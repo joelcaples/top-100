@@ -17,6 +17,31 @@ if (-not (Test-Path (Join-Path $projectRoot "node_modules"))) {
   Pop-Location
 }
 
+$projectRootPattern = [Regex]::Escape($projectRoot)
+
+$listeningProcessIds = @(
+  Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty OwningProcess -Unique
+)
+
+foreach ($processId in $listeningProcessIds) {
+  if ($processId -and $processId -ne $PID) {
+    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+  }
+}
+
+$nodeProcesses = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+  Where-Object {
+    $_.ProcessId -ne $PID -and (
+      $_.CommandLine -match $projectRootPattern -or
+      $_.CommandLine -match "server\.js"
+    )
+  }
+
+foreach ($process in $nodeProcesses) {
+  Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+}
+
 Start-Process -FilePath "powershell" -ArgumentList @(
   "-NoExit",
   "-Command",
@@ -25,5 +50,5 @@ Start-Process -FilePath "powershell" -ArgumentList @(
 
 Start-Process "http://localhost:3000"
 
-Write-Host "Top 100 app launching..."
+Write-Host "ListFlair app launching..."
 Write-Host "Server: http://localhost:3000"

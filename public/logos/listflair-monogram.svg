@@ -1,0 +1,14 @@
+<svg width="960" height="540" viewBox="0 0 960 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="540" fill="#080808"/>
+  <rect x="74" y="74" width="812" height="392" rx="26" stroke="#C8A55A" stroke-width="4"/>
+  <path d="M170 130H790" stroke="#C8A55A" stroke-width="2" opacity="0.55"/>
+  <path d="M170 410H790" stroke="#C8A55A" stroke-width="2" opacity="0.55"/>
+  <path d="M222 124L248 92L274 124" stroke="#C8A55A" stroke-width="2"/>
+  <path d="M686 416L712 448L738 416" stroke="#C8A55A" stroke-width="2"/>
+  <text x="264" y="326" fill="#F4E7C8" font-size="212" font-family="Georgia, 'Times New Roman', serif" letter-spacing="6">L</text>
+  <text x="430" y="326" fill="#C8A55A" font-size="212" font-family="Georgia, 'Times New Roman', serif" letter-spacing="6">F</text>
+  <path d="M409 172V334" stroke="#C8A55A" stroke-width="7"/>
+  <path d="M397 182L421 182" stroke="#C8A55A" stroke-width="7"/>
+  <text x="250" y="392" fill="#F4E7C8" font-size="56" font-family="Verdana, Geneva, sans-serif" letter-spacing="14">ListFlair</text>
+  <text x="314" y="434" fill="#C8A55A" font-size="18" font-family="Verdana, Geneva, sans-serif" letter-spacing="8">CURATED WITH DRAMA</text>
+</svg>

@@ -1,0 +1,11 @@
+<svg width="960" height="540" viewBox="0 0 960 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="540" fill="#090909"/>
+  <circle cx="318" cy="270" r="148" stroke="#C9A86A" stroke-width="4"/>
+  <circle cx="318" cy="270" r="122" stroke="#C9A86A" stroke-width="1.5" opacity="0.7"/>
+  <text x="246" y="300" fill="#F4E7C8" font-size="112" font-family="Georgia, 'Times New Roman', serif" letter-spacing="5">LF</text>
+  <path d="M318 126L329 146L351 150L335 166L339 188L318 178L297 188L301 166L285 150L307 146L318 126Z" fill="#C9A86A"/>
+  <text x="490" y="236" fill="#F4E7C8" font-size="84" font-family="Georgia, 'Times New Roman', serif" letter-spacing="3">ListFlair</text>
+  <text x="492" y="286" fill="#C9A86A" font-size="26" font-family="Verdana, Geneva, sans-serif" letter-spacing="9">CURATE. RANK. REVEAL.</text>
+  <path d="M492 320H784" stroke="#C9A86A" stroke-width="2" opacity="0.65"/>
+  <path d="M492 338H732" stroke="#C9A86A" stroke-width="1.5" opacity="0.35"/>
+</svg>

@@ -203,7 +203,7 @@ async function ensureEntryImage(cell, { forceRefresh = false } = {}) {
   }
 }
 
-function renderTop100(selection, totalEntries) {
+function renderListflair(selection, totalEntries) {
   topGrid.innerHTML = selection
     .map(
       (item, index) => `
@@ -294,7 +294,7 @@ function renderAddCell() {
       topGrid.insertBefore(newCell, addCell);
 
       // Check if we've hit 100 items
-      const countRes = await fetch("/api/top-100?size=1");
+      const countRes = await fetch("/api/listflair?size=1");
       const countPayload = await countRes.json();
       if (countPayload.totalEntries >= 100) {
         addCell.remove();
@@ -555,12 +555,12 @@ topGrid.addEventListener("click", async (event) => {
   }
 });
 
-async function fetchTop100() {
+async function fetchListflair() {
   rerollBtn.disabled = true;
   statusMsg.textContent = "Loading fresh picks...";
 
   try {
-    const response = await fetch("/api/top-100?size=100", {
+    const response = await fetch("/api/listflair?size=100", {
       headers: {
         Accept: "application/json"
       }
@@ -571,10 +571,10 @@ async function fetchTop100() {
     }
 
     const payload = await response.json();
-    renderTop100(payload.items, payload.totalEntries);
+    renderListflair(payload.items, payload.totalEntries);
     statusMsg.textContent = `Loaded ${payload.count} picks.`;
   } catch (error) {
-    console.error("Unable to fetch top 100:", error);
+    console.error("Unable to fetch listflair:", error);
     statusMsg.textContent = "Could not load data. Check the service and try again.";
     topGrid.innerHTML = "";
   } finally {
@@ -582,6 +582,52 @@ async function fetchTop100() {
   }
 }
 
-rerollBtn.addEventListener("click", fetchTop100);
+const installBtn = document.getElementById("installBtn");
+let deferredInstallPrompt;
 
-fetchTop100();
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+
+  try {
+    await navigator.serviceWorker.register("/service-worker.js");
+  } catch (error) {
+    console.error("Service worker registration failed:", error);
+  }
+}
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+
+  if (installBtn) {
+    installBtn.hidden = false;
+  }
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+
+  if (installBtn) {
+    installBtn.hidden = true;
+  }
+});
+
+if (installBtn) {
+  installBtn.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) {
+      return;
+    }
+
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    installBtn.hidden = true;
+  });
+}
+
+rerollBtn.addEventListener("click", fetchListflair);
+
+registerServiceWorker();
+fetchListflair();

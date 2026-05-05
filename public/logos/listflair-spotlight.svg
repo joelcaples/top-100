@@ -1,0 +1,12 @@
+<svg width="960" height="540" viewBox="0 0 960 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="540" fill="#0D1117"/>
+  <path d="M480 84L420 248H540L480 84Z" fill="#B68B3A" opacity="0.55"/>
+  <path d="M480 84L330 252" stroke="#B68B3A" stroke-width="2" opacity="0.45"/>
+  <path d="M480 84L390 252" stroke="#B68B3A" stroke-width="2" opacity="0.45"/>
+  <path d="M480 84L570 252" stroke="#B68B3A" stroke-width="2" opacity="0.45"/>
+  <path d="M480 84L630 252" stroke="#B68B3A" stroke-width="2" opacity="0.45"/>
+  <path d="M180 336H780" stroke="#B68B3A" stroke-width="2" opacity="0.55"/>
+  <text x="170" y="314" fill="#F5ECD9" font-size="118" font-family="Georgia, 'Times New Roman', serif" letter-spacing="4">List<tspan fill="#D9A441">F</tspan>lair</text>
+  <text x="245" y="385" fill="#B68B3A" font-size="28" font-family="Verdana, Geneva, sans-serif" letter-spacing="10">A LIVING BOARD OF STANDOUT PICKS</text>
+  <rect x="198" y="136" width="564" height="290" rx="20" stroke="#B68B3A" stroke-width="3" opacity="0.75"/>
+</svg>
