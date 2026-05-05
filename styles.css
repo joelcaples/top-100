@@ -415,6 +415,13 @@ h1 {
   padding: 0.18rem 0.42rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  cursor: text;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.cell:not(.cell--image-mode) .tag:hover {
+  background: #2b413d;
+  transform: translateY(-1px);
 }
 
 @keyframes reveal {

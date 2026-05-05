@@ -9,15 +9,30 @@ const OPENVERSE_API_URL = "https://api.openverse.org/v1/images/";
 const IMAGE_PAGE_SIZE = 16;
 const OUTPUT_WIDTH = 640;
 const OUTPUT_HEIGHT = 480;
+const CATEGORY_QUERY_HINTS = {
+  music: ["band", "musician", "logo", "album cover"],
+  movies: ["film", "poster", "still"],
+  sports: ["athlete", "team", "action"],
+  gaming: ["game", "character", "art"]
+};
+
+const GENERIC_STOCK_TERMS = /(stock|vector|illustration|clipart|template|background)/;
 
 function buildQueries(entry) {
   const queries = new Set();
   const name = entry.name.trim();
   const category = entry.category.trim();
+  const categoryKey = category.toLowerCase();
+  const hints = CATEGORY_QUERY_HINTS[categoryKey] || [];
 
   if (name && category) {
     queries.add(`${name} ${category}`);
     queries.add(`"${name}" ${category}`);
+  }
+
+  for (const hint of hints) {
+    queries.add(`${name} ${hint}`);
+    queries.add(`"${name}" ${hint}`);
   }
 
   if (name) {
@@ -59,6 +74,8 @@ function getCandidateScore(candidate, entry, query) {
   const nameTokens = tokenize(entry.name);
   const categoryTokens = tokenize(entry.category);
   let score = 0;
+  let nameTokenMatches = 0;
+  let categoryTokenMatches = 0;
 
   if (haystack.includes(namePhrase)) {
     score += 50;
@@ -77,13 +94,23 @@ function getCandidateScore(candidate, entry, query) {
   for (const token of nameTokens) {
     if (haystack.includes(token)) {
       score += 10;
+      nameTokenMatches += 1;
     }
   }
 
   for (const token of categoryTokens) {
     if (haystack.includes(token)) {
       score += 4;
+      categoryTokenMatches += 1;
     }
+  }
+
+  if (nameTokens.length > 0 && nameTokenMatches === 0) {
+    score -= 40;
+  }
+
+  if (categoryTokens.length > 0 && categoryTokenMatches === 0) {
+    score -= 8;
   }
 
   const width = Number(candidate.width || 0);
@@ -102,6 +129,20 @@ function getCandidateScore(candidate, entry, query) {
   const title = (candidate.title || "").toLowerCase();
   if (/(stock|vector|illustration|clipart|template|background|icon)/.test(title)) {
     score -= 20;
+  }
+
+  if (GENERIC_STOCK_TERMS.test(haystack)) {
+    score -= 18;
+  }
+
+  if (categoryPhrase === "music") {
+    if (/(band|musician|artist|album|cover|logo)/.test(haystack)) {
+      score += 16;
+    }
+
+    if (/(music background|musical background|abstract music|equalizer)/.test(haystack)) {
+      score -= 20;
+    }
   }
 
   if (!candidate.url && !candidate.thumbnail) {

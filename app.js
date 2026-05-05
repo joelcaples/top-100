@@ -433,6 +433,82 @@ topGrid.addEventListener("click", async (event) => {
     }
   }
 
+  // Handle category editing
+  const tagEl = event.target.closest(".tag");
+  if (tagEl && !tagEl.querySelector("input")) {
+    const cell = tagEl.closest(".cell");
+    if (cell && !cell.classList.contains("cell--add")) {
+      const id = cell.dataset.id;
+      const currentCategory = tagEl.textContent;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = currentCategory;
+      input.maxLength = "80";
+      input.style.width = "100%";
+      input.style.padding = "0.2rem 0.4rem";
+      input.style.fontFamily = "inherit";
+      input.style.fontSize = "0.68rem";
+      input.style.letterSpacing = "0.04em";
+      input.style.textTransform = "none";
+      input.style.borderRadius = "999px";
+      input.style.border = "1px solid #15211f";
+
+      tagEl.replaceWith(input);
+      input.focus();
+      input.setSelectionRange(0, input.value.length);
+      requestAnimationFrame(() => {
+        input.scrollLeft = 0;
+      });
+
+      async function saveCategory() {
+        const nextCategory = input.value.trim();
+        if (!nextCategory) {
+          const span = document.createElement("span");
+          span.className = "tag";
+          span.textContent = currentCategory;
+          input.replaceWith(span);
+          return;
+        }
+
+        try {
+          const title = cell.querySelector(".title")?.textContent?.trim() || "item";
+          const response = await fetch(`/api/entries/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: title, category: nextCategory })
+          });
+          if (!response.ok) throw new Error(`Update failed: ${response.status}`);
+
+          const span = document.createElement("span");
+          span.className = "tag";
+          span.textContent = nextCategory;
+          input.replaceWith(span);
+        } catch (err) {
+          console.error("Could not update category:", err);
+          const span = document.createElement("span");
+          span.className = "tag";
+          span.textContent = currentCategory;
+          input.replaceWith(span);
+        }
+      }
+
+      input.addEventListener("blur", saveCategory);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          saveCategory();
+        } else if (e.key === "Escape") {
+          const span = document.createElement("span");
+          span.className = "tag";
+          span.textContent = currentCategory;
+          input.replaceWith(span);
+        }
+      });
+      return;
+    }
+  }
+
   const refreshBtn = event.target.closest(".refresh-btn");
   if (refreshBtn) {
     const cell = refreshBtn.closest(".cell");
