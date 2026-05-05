@@ -556,7 +556,9 @@ topGrid.addEventListener("click", async (event) => {
 });
 
 async function fetchListflair() {
-  rerollBtn.disabled = true;
+  if (rerollBtn) {
+    rerollBtn.disabled = true;
+  }
   statusMsg.textContent = "Loading fresh picks...";
 
   try {
@@ -578,7 +580,9 @@ async function fetchListflair() {
     statusMsg.textContent = "Could not load data. Check the service and try again.";
     topGrid.innerHTML = "";
   } finally {
-    rerollBtn.disabled = false;
+    if (rerollBtn) {
+      rerollBtn.disabled = false;
+    }
   }
 }
 
@@ -627,7 +631,9 @@ if (installBtn) {
   });
 }
 
-rerollBtn.addEventListener("click", fetchListflair);
+if (rerollBtn) {
+  rerollBtn.addEventListener("click", fetchListflair);
+}
 
 registerServiceWorker();
 fetchListflair();

@@ -132,39 +132,69 @@ body {
   margin-top: 0.95rem;
 }
 
-#rerollBtn {
+.button-deco {
+  position: relative;
   border: 1px solid var(--gold);
   border-radius: 3px;
-  background: linear-gradient(130deg, #2f2a22, #1f1b16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 55%),
+    linear-gradient(130deg, #3a2e18, #17120d 78%);
   color: #f3e6c8;
-  font-size: 0.95rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  padding: 0.66rem 1rem;
+  padding: 0.78rem 1.35rem 0.72rem;
   cursor: pointer;
   box-shadow: var(--shadow-soft);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  overflow: hidden;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.button-deco::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(243, 230, 200, 0.16);
+  pointer-events: none;
+}
+
+.button-deco__label {
+  position: relative;
+  display: inline-block;
+  padding: 0 0.15rem;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.button-deco__label::before,
+.button-deco__label::after {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-52%);
+  font-size: 0.45rem;
+  color: rgba(243, 230, 200, 0.75);
+}
+
+.button-deco__label::before {
+  content: "◆";
+  right: calc(100% + 0.45rem);
+}
+
+.button-deco__label::after {
+  content: "◆";
+  left: calc(100% + 0.3rem);
 }
 
 #installBtn {
-  border: 1px solid rgba(183, 147, 84, 0.72);
-  border-radius: 3px;
-  background: transparent;
-  color: #f1ddae;
-  font-size: 0.95rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 0.66rem 1rem;
-  cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  min-width: 12.5rem;
 }
 
 #installBtn:hover {
   transform: translateY(-2px);
-  background: rgba(183, 147, 84, 0.12);
-  box-shadow: 0 10px 18px rgba(30, 25, 18, 0.18);
+  border-color: #d7b57c;
+  box-shadow: 0 10px 18px rgba(30, 25, 18, 0.22);
 }
 
 #installBtn:active {
@@ -175,16 +205,17 @@ body {
   display: none;
 }
 
-#rerollBtn:hover {
+.button-deco:hover {
   transform: translateY(-2px);
+  border-color: #d7b57c;
   box-shadow: 0 10px 18px rgba(30, 25, 18, 0.22);
 }
 
-#rerollBtn:active {
+.button-deco:active {
   transform: translateY(0);
 }
 
-#rerollBtn:disabled {
+.button-deco:disabled {
   opacity: 0.7;
   cursor: wait;
 }
