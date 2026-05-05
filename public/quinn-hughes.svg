@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <rect width="400" height="400" fill="url(#bg)"/>
+  
+  <!-- Face -->
+  <circle cx="200" cy="160" r="80" fill="#f4c4a0" stroke="#333" stroke-width="2"/>
+  
+  <!-- Hair -->
+  <path d="M 120 160 Q 120 80 200 80 Q 280 80 280 160" fill="#2c1810" stroke="#333" stroke-width="2"/>
+  
+  <!-- Ghost eyes -->
+  <g>
+    <!-- Left eye -->
+    <circle cx="170" cy="140" r="18" fill="#fff"/>
+    <circle cx="170" cy="140" r="12" fill="#f0f0f0" opacity="0.6"/>
+    <!-- Ghost in left eye -->
+    <text x="170" y="148" font-size="20" text-anchor="middle" fill="#333">👻</text>
+    
+    <!-- Right eye -->
+    <circle cx="230" cy="140" r="18" fill="#fff"/>
+    <circle cx="230" cy="140" r="12" fill="#f0f0f0" opacity="0.6"/>
+    <!-- Ghost in right eye -->
+    <text x="230" y="148" font-size="20" text-anchor="middle" fill="#333">👻</text>
+  </g>
+  
+  <!-- Nose -->
+  <ellipse cx="200" cy="170" rx="8" ry="12" fill="#e8b89a"/>
+  
+  <!-- Mouth -->
+  <path d="M 180 190 Q 200 205 220 190" stroke="#333" stroke-width="2" fill="none" stroke-linecap="round"/>
+  
+  <!-- Text -->
+  <text x="200" y="340" font-size="24" font-weight="bold" text-anchor="middle" fill="#fff">Quinn Hughes</text>
+  <text x="200" y="370" font-size="14" text-anchor="middle" fill="#fff" opacity="0.8">Replace with actual image</text>
+</svg>

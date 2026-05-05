@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <defs>
+    <style>
+      @keyframes hourglass-spin {
+        0% { transform: rotateZ(0deg); }
+        50% { transform: rotateZ(180deg); }
+        100% { transform: rotateZ(360deg); }
+      }
+      .hourglass { animation: hourglass-spin 2s linear infinite; transform-origin: 50% 50%; }
+    </style>
+  </defs>
+  
+  <!-- Hourglass outline -->
+  <g class="hourglass">
+    <!-- Top bulb -->
+    <path d="M 30 10 L 70 10 L 60 35 L 40 35 Z" stroke="#4a9eff" stroke-width="2" fill="none"/>
+    <!-- Middle connector -->
+    <line x1="48" y1="35" x2="52" y2="35" stroke="#4a9eff" stroke-width="2"/>
+    <line x1="48" y1="35" x2="52" y2="65" stroke="#4a9eff" stroke-width="2"/>
+    <!-- Bottom bulb -->
+    <path d="M 40 65 L 60 65 L 70 90 L 30 90 Z" stroke="#4a9eff" stroke-width="2" fill="none"/>
+    
+    <!-- Sand falling (visual indicator) -->
+    <circle cx="50" cy="50" r="3" fill="#4a9eff" opacity="0.7"/>
+  </g>
+</svg>

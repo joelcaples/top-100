@@ -1,23 +1,214 @@
 const topGrid = document.getElementById("topGrid");
 const rerollBtn = document.getElementById("rerollBtn");
 const statusMsg = document.getElementById("statusMsg");
+const LOADING_IMAGE_SRC = "/image-loading.svg";
+const imagePolls = new Map();
+
+function getRefreshButtonMarkup() {
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="23 4 23 10 17 10"/>
+      <polyline points="1 20 1 14 7 14"/>
+      <path d="M3.5 9a9 9 0 0 1 14.13-3.36L23 10"/>
+      <path d="M20.5 15a9 9 0 0 1-14.13 3.36L1 14"/>
+    </svg>
+  `;
+}
+
+function getImageButtonMarkup(mode = "image") {
+  if (mode === "text") {
+    return `<span class="image-btn__text" aria-hidden="true">T</span>`;
+  }
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>
+  `;
+}
+
+function setImageButtonMode(button, mode) {
+  button.innerHTML = getImageButtonMarkup(mode);
+  if (mode === "text") {
+    button.setAttribute("title", "Show text");
+    button.setAttribute("aria-label", "Show text");
+    return;
+  }
+
+  button.setAttribute("title", "Show image");
+  button.setAttribute("aria-label", "Show image");
+}
+
+function setRefreshButtonLoading(cell, isLoading) {
+  const refreshBtn = cell.querySelector(".refresh-btn");
+  if (!refreshBtn) {
+    return;
+  }
+
+  refreshBtn.disabled = isLoading;
+  cell.classList.toggle("cell--image-loading", isLoading);
+}
+
+function getCellMarkup(item, rank) {
+  return `
+    <span class="rank">#${rank}</span>
+    <p class="title">${item.name}</p>
+    <span class="tag">${item.category}</span>
+    <div class="cell-content">
+       <img class="cell-image" style="display: none;" src="${item.imageUrl || LOADING_IMAGE_SRC}" alt="Loading" />
+    </div>
+    <button class="refresh-btn" aria-label="Refresh image" title="Refresh image">${getRefreshButtonMarkup()}</button>
+    <button class="image-btn" aria-label="Show image" title="Show image">${getImageButtonMarkup("image")}</button>
+    <button class="delete-btn" aria-label="Remove ${item.name}" title="Remove">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6l-1 14H6L5 6"/>
+        <path d="M10 11v6M14 11v6"/>
+        <path d="M9 6V4h6v2"/>
+      </svg>
+    </button>
+  `;
+}
+
+function showImageMode(cell, imageUrl = LOADING_IMAGE_SRC) {
+  const image = cell.querySelector(".cell-image");
+  const content = cell.querySelector(".cell-content");
+  const imageBtn = cell.querySelector(".image-btn");
+  const title = cell.querySelector(".title")?.textContent || "item";
+
+  image.src = imageUrl;
+  image.alt = imageUrl === LOADING_IMAGE_SRC ? `Loading image for ${title}` : `Image for ${title}`;
+  image.style.display = "block";
+  content.style.display = "flex";
+  cell.classList.add("cell--image-mode");
+  setImageButtonMode(imageBtn, "text");
+}
+
+function hideImageMode(cell) {
+  const image = cell.querySelector(".cell-image");
+  const content = cell.querySelector(".cell-content");
+  const imageBtn = cell.querySelector(".image-btn");
+
+  image.style.display = "none";
+  content.style.display = "none";
+  cell.classList.remove("cell--image-mode");
+  setImageButtonMode(imageBtn, "image");
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pollForImage(cell) {
+  const id = cell.dataset.id;
+  const fallbackSrc = cell.dataset.previousImageSrc || LOADING_IMAGE_SRC;
+  if (imagePolls.has(id)) {
+    return imagePolls.get(id);
+  }
+
+  const pollPromise = (async () => {
+    try {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await wait(1200);
+
+        if (!document.body.contains(cell)) {
+          return;
+        }
+
+        const response = await fetch(`/api/entries/${id}/image`, {
+          headers: { Accept: "application/json" }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Image status failed: ${response.status}`);
+        }
+
+        const payload = await response.json();
+        if (payload.status === "ready" && payload.imageUrl) {
+          cell.querySelector(".cell-image").src = payload.imageUrl;
+          if (cell.classList.contains("cell--image-mode")) {
+            showImageMode(cell, payload.imageUrl);
+          }
+          statusMsg.textContent = "";
+          return;
+        }
+
+        if (payload.status === "error") {
+          if (fallbackSrc !== LOADING_IMAGE_SRC && cell.classList.contains("cell--image-mode")) {
+            showImageMode(cell, fallbackSrc);
+          } else {
+            hideImageMode(cell);
+          }
+          statusMsg.textContent = payload.error || "Could not find an image for that item.";
+          return;
+        }
+      }
+
+      if (fallbackSrc !== LOADING_IMAGE_SRC && cell.classList.contains("cell--image-mode")) {
+        showImageMode(cell, fallbackSrc);
+      } else {
+        hideImageMode(cell);
+      }
+      statusMsg.textContent = "Image lookup took too long. Try again.";
+    } finally {
+      setRefreshButtonLoading(cell, false);
+      imagePolls.delete(id);
+    }
+  })();
+
+  imagePolls.set(id, pollPromise);
+  return pollPromise;
+}
+
+async function ensureEntryImage(cell, { forceRefresh = false } = {}) {
+  const id = cell.dataset.id;
+  const existingSrc = cell.querySelector(".cell-image").getAttribute("src") || LOADING_IMAGE_SRC;
+  const initialSrc = existingSrc.includes("image-loading.svg") ? LOADING_IMAGE_SRC : existingSrc;
+  const endpoint = forceRefresh ? `/api/entries/${id}/image/refresh` : `/api/entries/${id}/image`;
+
+  try {
+    cell.dataset.previousImageSrc = initialSrc;
+    setRefreshButtonLoading(cell, true);
+    showImageMode(cell, forceRefresh ? LOADING_IMAGE_SRC : initialSrc);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { Accept: "application/json" }
+    });
+
+    if (!response.ok && response.status !== 202) {
+      throw new Error(`Image lookup failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (payload.status === "ready" && payload.imageUrl) {
+      showImageMode(cell, payload.imageUrl);
+      setRefreshButtonLoading(cell, false);
+      statusMsg.textContent = "";
+      return;
+    }
+
+    pollForImage(cell);
+  } catch (error) {
+    console.error("Could not load image:", error);
+    setRefreshButtonLoading(cell, false);
+    if (initialSrc !== LOADING_IMAGE_SRC) {
+      showImageMode(cell, initialSrc);
+    } else {
+      hideImageMode(cell);
+    }
+    statusMsg.textContent = "Could not load an image for that item.";
+  }
+}
 
 function renderTop100(selection, totalEntries) {
   topGrid.innerHTML = selection
     .map(
       (item, index) => `
         <article class="cell" data-id="${item.id}" style="animation-delay:${Math.min(index * 12, 680)}ms">
-          <span class="rank">#${index + 1}</span>
-          <p class="title">${item.name}</p>
-          <span class="tag">${item.category}</span>
-          <button class="delete-btn" aria-label="Remove ${item.name}" title="Remove">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14H6L5 6"/>
-              <path d="M10 11v6M14 11v6"/>
-              <path d="M9 6V4h6v2"/>
-            </svg>
-          </button>
+          ${getCellMarkup(item, index + 1)}
         </article>
       `
     )
@@ -89,19 +280,7 @@ function renderAddCell() {
       } else {
         index = childCount + 1;
       }
-      newCell.innerHTML = `
-        <span class="rank">#${index}</span>
-        <p class="title">${newEntry.name}</p>
-        <span class="tag">${newEntry.category}</span>
-        <button class="delete-btn" aria-label="Remove ${newEntry.name}" title="Remove">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="3 6 5 6 21 6"/>
-            <path d="M19 6l-1 14H6L5 6"/>
-            <path d="M10 11v6M14 11v6"/>
-            <path d="M9 6V4h6v2"/>
-          </svg>
-        </button>
-      `;
+      newCell.innerHTML = getCellMarkup(newEntry, index);
       newCell.dataset.id = newEntry.id;
       topGrid.insertBefore(newCell, addCell);
 
@@ -243,6 +422,29 @@ topGrid.addEventListener("click", async (event) => {
       });
       return;
     }
+  }
+
+  const refreshBtn = event.target.closest(".refresh-btn");
+  if (refreshBtn) {
+    const cell = refreshBtn.closest(".cell");
+    if (cell && !cell.classList.contains("cell--add")) {
+      ensureEntryImage(cell, { forceRefresh: true });
+    }
+    return;
+  }
+
+  // Handle image button
+  const imageBtn = event.target.closest(".image-btn");
+  if (imageBtn) {
+    const cell = imageBtn.closest(".cell");
+    if (cell && !cell.classList.contains("cell--add")) {
+      if (cell.classList.contains("cell--image-mode")) {
+        hideImageMode(cell);
+      } else {
+        ensureEntryImage(cell);
+      }
+    }
+    return;
   }
 
   // Handle delete button

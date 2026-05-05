@@ -216,6 +216,34 @@ function initializeDatabase() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  const columns = new Set(
+    database.prepare("PRAGMA table_info(entries)").all().map((column) => column.name)
+  );
+
+  if (!columns.has("image_url")) {
+    database.exec("ALTER TABLE entries ADD COLUMN image_url TEXT");
+  }
+
+  if (!columns.has("image_status")) {
+    database.exec("ALTER TABLE entries ADD COLUMN image_status TEXT NOT NULL DEFAULT 'idle'");
+  }
+
+  if (!columns.has("image_source")) {
+    database.exec("ALTER TABLE entries ADD COLUMN image_source TEXT");
+  }
+
+  if (!columns.has("image_error")) {
+    database.exec("ALTER TABLE entries ADD COLUMN image_error TEXT");
+  }
+
+  if (!columns.has("image_query")) {
+    database.exec("ALTER TABLE entries ADD COLUMN image_query TEXT");
+  }
+
+  if (!columns.has("image_result_index")) {
+    database.exec("ALTER TABLE entries ADD COLUMN image_result_index INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function getTop100(size = 100) {
@@ -229,7 +257,7 @@ function getTop100(size = 100) {
 
   const selection = database
     .prepare(
-      "SELECT id, name, category FROM entries ORDER BY RANDOM() LIMIT ?"
+      "SELECT id, name, category, image_url AS imageUrl, image_status AS imageStatus FROM entries ORDER BY RANDOM() LIMIT ?"
     )
     .all(cappedSize);
 
@@ -254,15 +282,97 @@ function addEntry(name, category) {
   const result = database
     .prepare("INSERT INTO entries (name, category) VALUES (?, ?)")
     .run(name, category);
-  return { id: result.lastInsertRowid, name, category };
+  return {
+    id: result.lastInsertRowid,
+    name,
+    category,
+    imageUrl: null,
+    imageStatus: "idle",
+    imageSource: null
+  };
 }
 
 function updateEntry(id, name, category) {
   const database = getDatabase();
   const result = database
-    .prepare("UPDATE entries SET name = ?, category = ? WHERE id = ?")
+    .prepare(`
+      UPDATE entries
+      SET name = ?,
+          category = ?,
+          image_url = NULL,
+          image_status = 'idle',
+          image_source = NULL,
+          image_error = NULL,
+          image_query = NULL,
+          image_result_index = 0
+      WHERE id = ?
+    `)
     .run(name, category, id);
   return result.changes > 0 ? { id, name, category } : null;
+}
+
+function getEntry(id) {
+  const database = getDatabase();
+  return database
+    .prepare(`
+      SELECT
+        id,
+        name,
+        category,
+        image_url AS imageUrl,
+        image_status AS imageStatus,
+        image_source AS imageSource,
+        image_error AS imageError,
+        image_query AS imageQuery,
+        image_result_index AS imageResultIndex
+      FROM entries
+      WHERE id = ?
+    `)
+    .get(id) || null;
+}
+
+function markEntryImageLoading(id, imageResultIndex = 0) {
+  const database = getDatabase();
+  const result = database
+    .prepare(`
+      UPDATE entries
+      SET image_status = 'loading',
+          image_error = NULL,
+          image_result_index = ?
+      WHERE id = ?
+    `)
+    .run(imageResultIndex, id);
+  return result.changes > 0;
+}
+
+function setEntryImageReady(id, imageUrl, imageSource = null, imageQuery = null, imageResultIndex = 0) {
+  const database = getDatabase();
+  const result = database
+    .prepare(`
+      UPDATE entries
+      SET image_url = ?,
+          image_status = 'ready',
+          image_source = ?,
+          image_error = NULL,
+          image_query = ?,
+          image_result_index = ?
+      WHERE id = ?
+    `)
+    .run(imageUrl, imageSource, imageQuery, imageResultIndex, id);
+  return result.changes > 0;
+}
+
+function setEntryImageError(id, imageError) {
+  const database = getDatabase();
+  const result = database
+    .prepare(`
+      UPDATE entries
+      SET image_status = 'error',
+          image_error = ?
+      WHERE id = ?
+    `)
+    .run(imageError, id);
+  return result.changes > 0;
 }
 
 module.exports = {
@@ -270,5 +380,9 @@ module.exports = {
   getTop100,
   deleteEntry,
   addEntry,
-  updateEntry
+  updateEntry,
+  getEntry,
+  markEntryImageLoading,
+  setEntryImageReady,
+  setEntryImageError
 };

@@ -196,6 +196,114 @@ h1 {
   background: #fde8e6;
 }
 
+.image-btn {
+  position: absolute;
+  top: 0.3rem;
+  right: 2.1rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #3498db;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+.refresh-btn {
+  position: absolute;
+  top: 0.3rem;
+  right: 3.9rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #8b5cf6;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.refresh-btn svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  pointer-events: none;
+}
+
+.image-btn svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  pointer-events: none;
+}
+
+.image-btn__text {
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.cell:hover .image-btn {
+  opacity: 1;
+}
+
+.cell:hover .refresh-btn {
+  opacity: 1;
+}
+
+.image-btn:hover {
+  background: #d4e8f7;
+}
+
+.refresh-btn:hover {
+  background: #efe7ff;
+}
+
+.refresh-btn:disabled {
+  opacity: 1;
+  color: #b5a5e6;
+  cursor: wait;
+}
+
+.cell--image-loading .refresh-btn svg {
+  animation: spin 900ms linear infinite;
+}
+
+.cell-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cell-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cell--image-mode .rank,
+.cell--image-mode .title,
+.cell--image-mode .tag {
+  visibility: hidden;
+}
+
 .cell--add {
   background: linear-gradient(145deg, #f0fff8, #d4f5e9);
   border: 2px dashed #70c1b3;
@@ -334,6 +442,16 @@ h1 {
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
 
