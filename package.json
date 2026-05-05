@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/joelcaples/top-100#readme",
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "express": "^5.2.1"
   }
 }

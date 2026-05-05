@@ -1,9 +1,11 @@
 const path = require("path");
 const express = require("express");
-const { getTop100 } = require("./services/top100Service");
+const { initializeDatabase, getTop100 } = require("./services/top100Service");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+initializeDatabase();
 
 app.use(express.static(path.join(__dirname)));
 

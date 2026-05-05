@@ -1,3 +1,7 @@
+const fs = require("fs");
+const path = require("path");
+const Database = require("better-sqlite3");
+
 const ITEM_POOL = [
   { name: "Funk Basslines", category: "music" },
   { name: "Psychedelic Posters", category: "art" },
@@ -186,19 +190,60 @@ const ITEM_POOL = [
   { name: "Historic Innovation Labs", category: "tech" }
 ];
 
-function shuffle(items) {
-  const arr = [...items];
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+const DATA_DIR = path.join(__dirname, "..", "data");
+const DB_PATH = path.join(DATA_DIR, "top100.sqlite");
+
+let db;
+
+function getDatabase() {
+  if (db) {
+    return db;
   }
-  return arr;
+
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  db = new Database(DB_PATH);
+  return db;
+}
+
+function initializeDatabase() {
+  const database = getDatabase();
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  const existingCount = database
+    .prepare("SELECT COUNT(1) AS count FROM entries")
+    .get().count;
+
+  if (existingCount === 0) {
+    const insertEntry = database.prepare(
+      "INSERT INTO entries (name, category) VALUES (?, ?)"
+    );
+    const seedEntries = database.transaction((items) => {
+      for (const item of items) {
+        insertEntry.run(item.name, item.category);
+      }
+    });
+    seedEntries(ITEM_POOL);
+  }
 }
 
 function getTop100(size = 100) {
   const normalized = Number.isNaN(Number(size)) ? 100 : Number(size);
   const cappedSize = Math.max(1, Math.min(normalized, 100));
-  const selection = shuffle(ITEM_POOL).slice(0, cappedSize);
+  const database = getDatabase();
+
+  const selection = database
+    .prepare(
+      "SELECT name, category FROM entries ORDER BY RANDOM() LIMIT ?"
+    )
+    .all(cappedSize);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -208,5 +253,6 @@ function getTop100(size = 100) {
 }
 
 module.exports = {
+  initializeDatabase,
   getTop100
 };
