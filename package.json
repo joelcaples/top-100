@@ -1,0 +1,24 @@
+{
+  "name": "top-100",
+  "version": "1.0.0",
+  "description": "The Top 100 Everything web app with API-backed data service",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joelcaples/top-100.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/joelcaples/top-100/issues"
+  },
+  "homepage": "https://github.com/joelcaples/top-100#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
