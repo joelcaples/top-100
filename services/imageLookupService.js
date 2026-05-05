@@ -351,29 +351,66 @@ async function removeCachedImage(imageUrl) {
   }
 }
 
-async function searchImagesByQuery(query) {
-  const response = await fetch(
-    `${OPENVERSE_API_URL}?q=${encodeURIComponent(query)}&page_size=${IMAGE_PAGE_SIZE}`,
+async function searchWebImages(query) {
+  // DDG image search (unofficial) — no API key required
+  const pageRes = await fetch(
+    `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`,
     {
       headers: {
-        Accept: "application/json",
-        "User-Agent": "listflair-app/1.0"
-      }
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        Accept: "text/html,application/xhtml+xml"
+      },
+      redirect: "follow"
     }
   );
 
-  if (!response.ok) {
-    throw new Error(`Openverse search failed: ${response.status}`);
+  if (!pageRes.ok) {
+    throw new Error(`Image search unavailable (${pageRes.status})`);
   }
 
-  const payload = await response.json();
-  return (payload.results || [])
-    .filter((r) => r.thumbnail || r.url)
+  const html = await pageRes.text();
+  const vqdMatch =
+    html.match(/vqd=['"]([^'"]+)['"]/) ||
+    html.match(/"vqd":"([^"]+)"/) ||
+    html.match(/vqd=([a-zA-Z0-9_-]+)/);
+  if (!vqdMatch) {
+    throw new Error("Image search temporarily unavailable");
+  }
+  const vqd = vqdMatch[1];
+
+  const imagesUrl = new URL("https://duckduckgo.com/i.js");
+  imagesUrl.searchParams.set("q", query);
+  imagesUrl.searchParams.set("vqd", vqd);
+  imagesUrl.searchParams.set("p", "1");
+  imagesUrl.searchParams.set("s", "0");
+  imagesUrl.searchParams.set("l", "us-en");
+  imagesUrl.searchParams.set("f", ",,,,,");
+
+  const imgRes = await fetch(imagesUrl.toString(), {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      Referer: "https://duckduckgo.com/",
+      Accept: "application/json, text/javascript, */*; q=0.01",
+      "Accept-Language": "en-US,en;q=0.9"
+    }
+  });
+
+  if (!imgRes.ok) {
+    throw new Error(`Image search failed (${imgRes.status})`);
+  }
+
+  const data = await imgRes.json();
+  return (data.results || [])
+    .filter((r) => r.thumbnail || r.image)
+    .slice(0, 24)
     .map((r) => ({
       title: r.title || "",
-      thumbnailUrl: r.thumbnail || r.url,
-      fetchUrl: r.url || r.thumbnail,
-      sourceUrl: r.foreign_landing_url || r.url || null
+      thumbnailUrl: r.thumbnail || r.image || "",
+      fetchUrl: r.image || r.thumbnail || "",
+      sourceUrl: r.url || null
     }));
 }
 
@@ -388,7 +425,7 @@ async function cacheSelectedImage(entry, { fetchUrl, thumbnailUrl, sourceUrl, qu
 
 module.exports = {
   findAndCacheImageForEntry,
-  searchImagesByQuery,
+  searchWebImages,
   cacheSelectedImage,
   isGeneratedImageUrl,
   removeCachedImage,

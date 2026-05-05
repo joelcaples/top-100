@@ -11,7 +11,6 @@ const detailModalCategoryInput = document.getElementById("detailModalCategoryInp
 const modalRefreshBtn = document.getElementById("modalRefreshBtn");
 const modalImageToggleBtn = document.getElementById("modalImageToggleBtn");
 const modalDeleteBtn = document.getElementById("modalDeleteBtn");
-const modalSearchBtn = document.getElementById("modalSearchBtn");
 const modalSearchPanel = document.getElementById("modalSearchPanel");
 const modalSearchInput = document.getElementById("modalSearchInput");
 const modalSearchResults = document.getElementById("modalSearchResults");
@@ -285,6 +284,15 @@ function openEditModal(cell) {
   modalState.lastFocus = document.activeElement;
   editModal.hidden = false;
   document.body.classList.add("modal-open");
+
+    if (modalSearchInput) {
+      const name = cell.querySelector(".title")?.textContent?.trim() || "";
+      modalSearchInput.value = name;
+    }
+    if (modalSearchResults) {
+      modalSearchResults.innerHTML = "";
+    }
+
   syncEditModalFromCell(cell);
   if (detailModalTitleInput) {
     detailModalTitleInput.focus();
@@ -302,17 +310,11 @@ function closeEditModal() {
   editModal.hidden = true;
   document.body.classList.remove("modal-open");
 
-  if (modalSearchPanel) {
-    modalSearchPanel.hidden = true;
-    if (modalSearchInput) {
-      modalSearchInput.value = "";
-    }
-    if (modalSearchResults) {
-      modalSearchResults.innerHTML = "";
-    }
+  if (modalSearchInput) {
+    modalSearchInput.value = "";
   }
-  if (modalSearchBtn) {
-    modalSearchBtn.setAttribute("aria-expanded", "false");
+  if (modalSearchResults) {
+    modalSearchResults.innerHTML = "";
   }
 
   const focusTarget = modalState.lastFocus;
@@ -517,22 +519,6 @@ async function handleDeleteAction(cell, trigger) {
   }
 }
 
-function toggleSearchPanel() {
-  if (!modalSearchPanel || !modalSearchBtn) {
-    return;
-  }
-
-  const isOpen = !modalSearchPanel.hidden;
-  modalSearchPanel.hidden = isOpen;
-  modalSearchBtn.setAttribute("aria-expanded", String(!isOpen));
-
-  if (!isOpen && modalSearchInput) {
-    const name = modalState.cell?.querySelector(".title")?.textContent?.trim() || "";
-    modalSearchInput.value = name;
-    modalSearchInput.focus();
-    modalSearchInput.setSelectionRange(0, modalSearchInput.value.length);
-  }
-}
 
 async function performImageSearch() {
   if (!modalState.cell || !modalSearchInput || !modalSearchResults) {
@@ -620,12 +606,6 @@ async function handlePickImage(btn) {
     const payload = await response.json();
     if (payload.imageUrl) {
       showImageMode(cell, payload.imageUrl);
-      if (modalSearchPanel) {
-        modalSearchPanel.hidden = true;
-      }
-      if (modalSearchBtn) {
-        modalSearchBtn.setAttribute("aria-expanded", "false");
-      }
     }
   } catch (err) {
     console.error("Could not pick image:", err);
@@ -1003,10 +983,6 @@ if (modalDeleteBtn) {
   });
 }
 
-if (modalSearchBtn) {
-  modalSearchBtn.innerHTML = getSearchButtonMarkup();
-  modalSearchBtn.addEventListener("click", toggleSearchPanel);
-}
 
 if (modalSearchInput) {
   modalSearchInput.addEventListener("keydown", (event) => {

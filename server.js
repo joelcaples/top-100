@@ -15,7 +15,7 @@ const {
 } = require("./services/listflairService");
 const {
   findAndCacheImageForEntry,
-  searchImagesByQuery,
+  searchWebImages,
   cacheSelectedImage,
   removeCachedImage,
   GENERATED_IMAGE_DIR
@@ -202,7 +202,7 @@ app.get("/api/entries/:id/image/search", async (req, res) => {
     return res.status(404).json({ error: "Entry not found" });
   }
 
-  const results = await searchImagesByQuery(q);
+  const results = await searchWebImages(q);
   res.json({ results });
 });
 

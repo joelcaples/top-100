@@ -93,10 +93,10 @@
             <div class="detail-modal__actions" aria-label="Item actions">
               <button id="modalRefreshBtn" class="detail-action detail-action--refresh" type="button" aria-label="Find image" title="Find image"></button>
               <button id="modalImageToggleBtn" class="detail-action detail-action--image" type="button" aria-label="Show image" title="Show image"></button>
-              <button id="modalSearchBtn" class="detail-action detail-action--search" type="button" aria-label="Search for image" title="Search for image" aria-expanded="false" aria-controls="modalSearchPanel"></button>
               <button id="modalDeleteBtn" class="detail-action detail-action--delete" type="button" aria-label="Delete item" title="Delete item"></button>
             </div>
-            <div id="modalSearchPanel" class="detail-modal__search-panel" hidden>
+            <div id="modalSearchPanel" class="detail-modal__search-panel">
+              <p class="detail-modal__search-label">Image Search</p>
               <div class="detail-modal__search-form">
                 <input id="modalSearchInput" class="detail-modal__search-input" type="search" placeholder="Search for images…" maxlength="200" autocomplete="off" />
                 <button id="modalSearchSubmit" class="detail-modal__search-submit" type="button" aria-label="Search">
