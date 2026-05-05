@@ -18,6 +18,11 @@ const modalState = {
   lastFocus: null,
   isSaving: false
 };
+const reorderState = {
+  draggingCell: null,
+  isPersisting: false,
+  hasQueuedPersist: false
+};
 
 const modalFocusableSelector =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -479,12 +484,66 @@ async function handleDeleteAction(cell, trigger) {
   }
 }
 
+function getOrderedIdsFromGrid() {
+  return Array.from(topGrid.querySelectorAll(".cell[data-id]:not(.cell--add)"))
+    .map((cell) => Number(cell.dataset.id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+}
+
+async function persistEntryOrder() {
+  const orderedIds = getOrderedIdsFromGrid();
+  if (orderedIds.length === 0) {
+    return;
+  }
+
+  if (reorderState.isPersisting) {
+    reorderState.hasQueuedPersist = true;
+    return;
+  }
+
+  reorderState.isPersisting = true;
+  do {
+    reorderState.hasQueuedPersist = false;
+    try {
+      const response = await fetch("/api/entries/reorder", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({ orderedIds: getOrderedIdsFromGrid() })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Reorder failed: ${response.status}`);
+      }
+
+      statusMsg.textContent = "";
+    } catch (error) {
+      console.error("Could not save reordered list:", error);
+      statusMsg.textContent = "Could not save list order. Reloading list.";
+      await fetchListflair();
+      break;
+    }
+  } while (reorderState.hasQueuedPersist);
+
+  reorderState.isPersisting = false;
+}
+
+function clearDraggingState() {
+  const draggingCell = topGrid.querySelector(".cell--dragging");
+  if (draggingCell) {
+    draggingCell.classList.remove("cell--dragging");
+  }
+  reorderState.draggingCell = null;
+}
+
 function renderListflair(selection, totalEntries) {
   closeEditModal();
   topGrid.innerHTML = selection
     .map(
       (item, index) => `
-        <article class="cell" data-id="${item.id}" style="animation-delay:${Math.min(index * 12, 680)}ms">
+        <article class="cell" data-id="${item.id}" draggable="true" style="animation-delay:${Math.min(index * 12, 680)}ms">
           ${getCellMarkup(item, index + 1)}
         </article>
       `
@@ -568,6 +627,7 @@ function renderAddCell() {
       }
       newCell.innerHTML = getCellMarkup(newEntry, index);
       newCell.dataset.id = newEntry.id;
+      newCell.draggable = true;
       topGrid.insertBefore(newCell, addCell);
 
       // Check if we've hit 100 items
@@ -817,6 +877,60 @@ topGrid.addEventListener("click", async (event) => {
   if (!cell) return;
 
   await handleDeleteAction(cell, btn);
+});
+
+topGrid.addEventListener("dragstart", (event) => {
+  const cell = event.target.closest(".cell");
+  if (!cell || cell.classList.contains("cell--add")) {
+    return;
+  }
+
+  reorderState.draggingCell = cell;
+  cell.classList.add("cell--dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", cell.dataset.id || "");
+  }
+});
+
+topGrid.addEventListener("dragover", (event) => {
+  const draggingCell = reorderState.draggingCell;
+  if (!draggingCell) {
+    return;
+  }
+
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  const targetCell = event.target.closest(".cell");
+  if (!targetCell || targetCell === draggingCell || targetCell.classList.contains("cell--add")) {
+    return;
+  }
+
+  const targetRect = targetCell.getBoundingClientRect();
+  const shouldInsertBefore = event.clientY < targetRect.top + targetRect.height / 2;
+
+  if (shouldInsertBefore) {
+    topGrid.insertBefore(draggingCell, targetCell);
+  } else {
+    topGrid.insertBefore(draggingCell, targetCell.nextSibling);
+  }
+});
+
+topGrid.addEventListener("drop", async (event) => {
+  if (!reorderState.draggingCell) {
+    return;
+  }
+
+  event.preventDefault();
+  clearDraggingState();
+  await persistEntryOrder();
+});
+
+topGrid.addEventListener("dragend", () => {
+  clearDraggingState();
 });
 
 if (editModal) {

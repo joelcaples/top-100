@@ -10,7 +10,8 @@ const {
   getEntry,
   markEntryImageLoading,
   setEntryImageReady,
-  setEntryImageError
+  setEntryImageError,
+  reorderEntries
 } = require("./services/listflairService");
 const {
   findAndCacheImageForEntry,
@@ -126,6 +127,20 @@ app.post("/api/entries", async (req, res) => {
   }
   const entry = await addEntry(name.trim().slice(0, 200), category.trim().slice(0, 80));
   res.status(201).json(entry);
+});
+
+app.patch("/api/entries/reorder", async (req, res) => {
+  const { orderedIds } = req.body || {};
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return res.status(400).json({ error: "orderedIds must be a non-empty array" });
+  }
+
+  const successful = await reorderEntries(orderedIds);
+  if (!successful) {
+    return res.status(400).json({ error: "Invalid reorder payload" });
+  }
+
+  return res.json({ ok: true });
 });
 
 app.delete("/api/entries/:id", async (req, res) => {

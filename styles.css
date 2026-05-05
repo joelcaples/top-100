@@ -250,6 +250,16 @@ body {
   transition: background 200ms ease, border-color 200ms ease;
 }
 
+.cell:not(.cell--add) {
+  cursor: grab;
+}
+
+.cell--dragging {
+  opacity: 0.45;
+  border-color: #d7b57c;
+  cursor: grabbing;
+}
+
 .cell--deleting {
   background: linear-gradient(145deg, #5a312d, #402522) !important;
   border-color: #a24f3f !important;

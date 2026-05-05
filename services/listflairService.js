@@ -10,6 +10,14 @@ const USE_AZURE_SQL = Boolean(process.env.AZURE_SQL_CONNECTION_STRING);
 let sqliteDb;
 let sqlPoolPromise;
 
+function normaliseIdList(ids = []) {
+  return ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
+}
+
+function hasUniqueIds(ids = []) {
+  return new Set(ids).size === ids.length;
+}
+
 function getSqliteDatabase() {
   if (sqliteDb) {
     return sqliteDb;
@@ -43,7 +51,8 @@ async function initializeAzureSqlDatabase() {
         image_source NVARCHAR(2048) NULL,
         image_error NVARCHAR(4000) NULL,
         image_query NVARCHAR(500) NULL,
-        image_result_index INT NOT NULL DEFAULT 0
+        image_result_index INT NOT NULL DEFAULT 0,
+        sort_order INT NOT NULL DEFAULT 0
       );
     END;
 
@@ -64,7 +73,36 @@ async function initializeAzureSqlDatabase() {
 
     IF COL_LENGTH('dbo.entries', 'image_result_index') IS NULL
       ALTER TABLE dbo.entries ADD image_result_index INT NOT NULL CONSTRAINT DF_entries_image_result_index DEFAULT 0;
+
+    IF COL_LENGTH('dbo.entries', 'sort_order') IS NULL
+      ALTER TABLE dbo.entries ADD sort_order INT NOT NULL CONSTRAINT DF_entries_sort_order DEFAULT 0;
   `);
+
+  const orderedRows = await pool.request().query(`
+    SELECT id
+    FROM dbo.entries
+    ORDER BY
+      CASE WHEN sort_order IS NULL OR sort_order <= 0 THEN 1 ELSE 0 END,
+      sort_order ASC,
+      created_at ASC,
+      id ASC
+  `);
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    for (let index = 0; index < orderedRows.recordset.length; index += 1) {
+      const id = orderedRows.recordset[index].id;
+      await new sql.Request(transaction)
+        .input("id", sql.Int, id)
+        .input("sortOrder", sql.Int, index + 1)
+        .query("UPDATE dbo.entries SET sort_order = @sortOrder WHERE id = @id");
+    }
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 }
 
 function initializeSqliteDatabase() {
@@ -106,6 +144,32 @@ function initializeSqliteDatabase() {
   if (!columns.has("image_result_index")) {
     database.exec("ALTER TABLE entries ADD COLUMN image_result_index INTEGER NOT NULL DEFAULT 0");
   }
+
+  if (!columns.has("sort_order")) {
+    database.exec("ALTER TABLE entries ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
+  }
+
+  const rows = database
+    .prepare(
+      `
+      SELECT id
+      FROM entries
+      ORDER BY
+        CASE WHEN sort_order IS NULL OR sort_order <= 0 THEN 1 ELSE 0 END,
+        sort_order ASC,
+        created_at ASC,
+        id ASC
+    `
+    )
+    .all();
+
+  const reorder = database.prepare("UPDATE entries SET sort_order = ? WHERE id = ?");
+  const normalise = database.transaction(() => {
+    rows.forEach((row, index) => {
+      reorder.run(index + 1, row.id);
+    });
+  });
+  normalise();
 }
 
 async function initializeDatabase() {
@@ -137,7 +201,7 @@ async function getListflair(size = 100) {
           image_url AS imageUrl,
           image_status AS imageStatus
         FROM dbo.entries
-        ORDER BY NEWID()
+        ORDER BY sort_order ASC, id ASC
       `);
 
     return {
@@ -152,7 +216,7 @@ async function getListflair(size = 100) {
   const totalEntries = database.prepare("SELECT COUNT(1) AS count FROM entries").get().count;
   const selection = database
     .prepare(
-      "SELECT id, name, category, image_url AS imageUrl, image_status AS imageStatus FROM entries ORDER BY RANDOM() LIMIT ?"
+      "SELECT id, name, category, image_url AS imageUrl, image_status AS imageStatus FROM entries ORDER BY sort_order ASC, id ASC LIMIT ?"
     )
     .all(cappedSize);
 
@@ -179,22 +243,33 @@ async function deleteEntry(id) {
 async function addEntry(name, category) {
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
+    const sortResult = await pool
+      .request()
+      .query("SELECT ISNULL(MAX(sort_order), 0) + 1 AS nextSortOrder FROM dbo.entries");
+    const nextSortOrder = Number(sortResult.recordset[0]?.nextSortOrder || 1);
+
     const result = await pool
       .request()
       .input("name", sql.NVarChar(200), name)
       .input("category", sql.NVarChar(80), category)
+      .input("sortOrder", sql.Int, nextSortOrder)
       .query(`
-        INSERT INTO dbo.entries (name, category)
+        INSERT INTO dbo.entries (name, category, sort_order)
         OUTPUT INSERTED.id, INSERTED.name, INSERTED.category, INSERTED.image_url AS imageUrl,
                INSERTED.image_status AS imageStatus, INSERTED.image_source AS imageSource
-        VALUES (@name, @category)
+        VALUES (@name, @category, @sortOrder)
       `);
 
     return result.recordset[0];
   }
 
   const database = getSqliteDatabase();
-  const result = database.prepare("INSERT INTO entries (name, category) VALUES (?, ?)").run(name, category);
+  const nextSortOrder = Number(
+    database.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS nextSortOrder FROM entries").get().nextSortOrder
+  );
+  const result = database
+    .prepare("INSERT INTO entries (name, category, sort_order) VALUES (?, ?, ?)")
+    .run(name, category, nextSortOrder);
   return {
     id: result.lastInsertRowid,
     name,
@@ -393,6 +468,65 @@ async function setEntryImageError(id, imageError) {
   return result.changes > 0;
 }
 
+async function reorderEntries(orderedIds = []) {
+  const ids = normaliseIdList(orderedIds);
+  if (!ids.length || !hasUniqueIds(ids)) {
+    return false;
+  }
+
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    const totalResult = await pool.request().query("SELECT COUNT(1) AS count FROM dbo.entries");
+    const totalEntries = Number(totalResult.recordset[0]?.count || 0);
+    if (totalEntries !== ids.length) {
+      return false;
+    }
+
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      let updatedCount = 0;
+      for (let index = 0; index < ids.length; index += 1) {
+        const id = ids[index];
+        const result = await new sql.Request(transaction)
+          .input("id", sql.Int, id)
+          .input("sortOrder", sql.Int, index + 1)
+          .query("UPDATE dbo.entries SET sort_order = @sortOrder WHERE id = @id");
+        updatedCount += Number(result.rowsAffected[0] || 0);
+      }
+
+      if (updatedCount !== ids.length) {
+        await transaction.rollback();
+        return false;
+      }
+
+      await transaction.commit();
+      return true;
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  const database = getSqliteDatabase();
+  const totalEntries = Number(database.prepare("SELECT COUNT(1) AS count FROM entries").get().count || 0);
+  if (totalEntries !== ids.length) {
+    return false;
+  }
+
+  const reorder = database.prepare("UPDATE entries SET sort_order = ? WHERE id = ?");
+  const applyReorder = database.transaction(() => {
+    let updatedCount = 0;
+    ids.forEach((id, index) => {
+      const result = reorder.run(index + 1, id);
+      updatedCount += Number(result.changes || 0);
+    });
+    return updatedCount === ids.length;
+  });
+
+  return applyReorder();
+}
+
 module.exports = {
   initializeDatabase,
   getListflair,
@@ -402,5 +536,6 @@ module.exports = {
   getEntry,
   markEntryImageLoading,
   setEntryImageReady,
-  setEntryImageError
+  setEntryImageError,
+  reorderEntries
 };
