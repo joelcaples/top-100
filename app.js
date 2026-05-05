@@ -107,7 +107,6 @@ function getCellMarkup(item, rank) {
     <div class="cell-content">
        <img class="cell-image" style="display: none;" src="${item.imageUrl || LOADING_IMAGE_SRC}" alt="Loading" />
     </div>
-    <button class="edit-btn" aria-label="Open details for ${item.name}" title="Edit item">${getEditButtonMarkup()}</button>
     <button class="refresh-btn" aria-label="Refresh image" title="Refresh image">${getRefreshButtonMarkup()}</button>
     <button class="image-btn" aria-label="Show image" title="Show image">${getImageButtonMarkup("image")}</button>
     <button class="delete-btn" aria-label="Remove ${item.name}" title="Remove">${getDeleteButtonMarkup()}</button>
@@ -697,186 +696,30 @@ function renderAddCell() {
 }
 
 topGrid.addEventListener("click", async (event) => {
-  const editBtn = event.target.closest(".edit-btn");
-  if (editBtn) {
-    const cell = editBtn.closest(".cell");
-    if (cell && !cell.classList.contains("cell--add")) {
-      openEditModal(cell);
-    }
+  const cell = event.target.closest(".cell");
+  if (!cell || cell.classList.contains("cell--add")) {
     return;
-  }
-
-  // Handle title editing
-  const titleEl = event.target.closest(".title");
-  if (titleEl && !titleEl.querySelector("input")) {
-    const cell = titleEl.closest(".cell");
-    if (cell && !cell.classList.contains("cell--add")) {
-      const id = cell.dataset.id;
-      const currentName = titleEl.textContent;
-      
-      const input = document.createElement("input");
-      input.type = "text";
-      input.value = currentName;
-      input.maxLength = "200";
-      input.style.width = "100%";
-      input.style.padding = "0.25rem";
-      input.style.fontFamily = "inherit";
-      input.style.fontSize = "inherit";
-      
-      titleEl.replaceWith(input);
-      input.focus();
-      input.setSelectionRange(0, input.value.length);
-      requestAnimationFrame(() => {
-        input.scrollLeft = 0;
-      });
-      
-      async function saveChange() {
-        const newName = input.value.trim();
-        if (!newName) {
-          const p = document.createElement("p");
-          p.className = "title";
-          p.textContent = currentName;
-          input.replaceWith(p);
-          return;
-        }
-        
-        try {
-          const categoryTag = cell.querySelector(".tag");
-          const category = categoryTag.textContent || "general";
-          const response = await fetch(`/api/entries/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: newName, category })
-          });
-          if (!response.ok) throw new Error(`Update failed: ${response.status}`);
-          
-          const p = document.createElement("p");
-          p.className = "title";
-          p.textContent = newName;
-          input.replaceWith(p);
-        } catch (err) {
-          console.error("Could not update entry:", err);
-          const p = document.createElement("p");
-          p.className = "title";
-          p.textContent = currentName;
-          input.replaceWith(p);
-        }
-      }
-      
-      input.addEventListener("blur", saveChange);
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          saveChange();
-        } else if (e.key === "Escape") {
-          const p = document.createElement("p");
-          p.className = "title";
-          p.textContent = currentName;
-          input.replaceWith(p);
-        }
-      });
-      return;
-    }
-  }
-
-  // Handle category editing
-  const tagEl = event.target.closest(".tag");
-  if (tagEl && !tagEl.querySelector("input")) {
-    const cell = tagEl.closest(".cell");
-    if (cell && !cell.classList.contains("cell--add")) {
-      const id = cell.dataset.id;
-      const currentCategory = tagEl.textContent;
-
-      const input = document.createElement("input");
-      input.type = "text";
-      input.value = currentCategory;
-      input.maxLength = "80";
-      input.style.width = "100%";
-      input.style.padding = "0.2rem 0.4rem";
-      input.style.fontFamily = "inherit";
-      input.style.fontSize = "0.68rem";
-      input.style.letterSpacing = "0.04em";
-      input.style.textTransform = "none";
-      input.style.borderRadius = "999px";
-      input.style.border = "1px solid #15211f";
-
-      tagEl.replaceWith(input);
-      input.focus();
-      input.setSelectionRange(0, input.value.length);
-      requestAnimationFrame(() => {
-        input.scrollLeft = 0;
-      });
-
-      async function saveCategory() {
-        const nextCategory = input.value.trim();
-        if (!nextCategory) {
-          const span = document.createElement("span");
-          span.className = "tag";
-          span.textContent = currentCategory;
-          input.replaceWith(span);
-          return;
-        }
-
-        try {
-          const title = cell.querySelector(".title")?.textContent?.trim() || "item";
-          const response = await fetch(`/api/entries/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: title, category: nextCategory })
-          });
-          if (!response.ok) throw new Error(`Update failed: ${response.status}`);
-
-          const span = document.createElement("span");
-          span.className = "tag";
-          span.textContent = nextCategory;
-          input.replaceWith(span);
-        } catch (err) {
-          console.error("Could not update category:", err);
-          const span = document.createElement("span");
-          span.className = "tag";
-          span.textContent = currentCategory;
-          input.replaceWith(span);
-        }
-      }
-
-      input.addEventListener("blur", saveCategory);
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          saveCategory();
-        } else if (e.key === "Escape") {
-          const span = document.createElement("span");
-          span.className = "tag";
-          span.textContent = currentCategory;
-          input.replaceWith(span);
-        }
-      });
-      return;
-    }
   }
 
   const refreshBtn = event.target.closest(".refresh-btn");
   if (refreshBtn) {
-    const cell = refreshBtn.closest(".cell");
     await handleRefreshAction(cell);
     return;
   }
 
-  // Handle image button
   const imageBtn = event.target.closest(".image-btn");
   if (imageBtn) {
-    const cell = imageBtn.closest(".cell");
     await handleImageToggleAction(cell);
     return;
   }
 
-  // Handle delete button
-  const btn = event.target.closest(".delete-btn");
-  if (!btn) return;
-  const cell = btn.closest(".cell");
-  if (!cell) return;
+  const deleteBtn = event.target.closest(".delete-btn");
+  if (deleteBtn) {
+    await handleDeleteAction(cell, deleteBtn);
+    return;
+  }
 
-  await handleDeleteAction(cell, btn);
+  openEditModal(cell);
 });
 
 topGrid.addEventListener("dragstart", (event) => {

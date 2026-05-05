@@ -251,7 +251,12 @@ body {
 }
 
 .cell:not(.cell--add) {
-  cursor: grab;
+  cursor: pointer;
+}
+
+.cell:not(.cell--add):hover {
+  border-color: #c9a862;
+  background: linear-gradient(145deg, #2d2831, #1d1b21);
 }
 
 .cell--dragging {
@@ -266,7 +271,6 @@ body {
   animation: flash-red 700ms ease forwards;
 }
 
-.edit-btn,
 .delete-btn,
 .image-btn,
 .refresh-btn {
@@ -286,30 +290,19 @@ body {
   transition: opacity 160ms ease, background 160ms ease, color 160ms ease;
 }
 
-.edit-btn {
-  right: 5.7rem;
-  color: #e4c37d;
-}
-
 .delete-btn {
   right: 0.3rem;
   color: #d78876;
 }
 
-.edit-btn svg,
 .delete-btn svg {
   width: 0.85rem;
   height: 0.85rem;
   pointer-events: none;
 }
 
-.cell:hover .edit-btn,
 .cell:hover .delete-btn {
   opacity: 1;
-}
-
-.edit-btn:hover {
-  background: rgba(183, 147, 84, 0.16);
 }
 
 .delete-btn:hover {
