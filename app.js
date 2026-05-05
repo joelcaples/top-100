@@ -214,6 +214,15 @@ function renderTop100(selection, totalEntries) {
     )
     .join("");
 
+  selection.forEach((item) => {
+    if (item.imageStatus === "ready" && item.imageUrl) {
+      const cell = topGrid.querySelector(`.cell[data-id="${item.id}"]`);
+      if (cell) {
+        showImageMode(cell, item.imageUrl);
+      }
+    }
+  });
+
   if (totalEntries < 100) {
     renderAddCell();
   }
