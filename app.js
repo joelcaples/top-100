@@ -1121,6 +1121,10 @@ async function initAuth() {
   const isLocalHost =
     location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
+  if (signInLink && !isLocalHost) {
+    signInLink.hidden = false;
+  }
+
   try {
     const response = await fetch("/api/me", { headers: { Accept: "application/json" } });
     if (!response.ok) {
