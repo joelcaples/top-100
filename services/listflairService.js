@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const Database = require("better-sqlite3");
 const sql = require("mssql");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
@@ -28,6 +27,7 @@ function getSqliteDatabase() {
     return sqliteDb;
   }
 
+  const Database = require("better-sqlite3");
   fs.mkdirSync(DATA_DIR, { recursive: true });
   sqliteDb = new Database(DB_PATH);
   return sqliteDb;
@@ -44,6 +44,16 @@ async function getAzureSqlPool() {
 async function initializeAzureSqlDatabase() {
   const pool = await getAzureSqlPool();
   await pool.request().query(`
+    IF OBJECT_ID(N'dbo.users', N'U') IS NULL
+    BEGIN
+      CREATE TABLE dbo.users (
+        owner_key NVARCHAR(200) NOT NULL PRIMARY KEY,
+        username NVARCHAR(100) NOT NULL UNIQUE,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+      );
+    END;
+
     IF OBJECT_ID(N'dbo.entries', N'U') IS NULL
     BEGIN
       CREATE TABLE dbo.entries (
@@ -126,6 +136,13 @@ function initializeSqliteDatabase() {
   const database = getSqliteDatabase();
 
   database.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      owner_key TEXT NOT NULL PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -589,6 +606,68 @@ async function reorderEntries(ownerKey, orderedIds = []) {
   return applyReorder();
 }
 
+async function getUsername(ownerKey) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    const result = await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .query("SELECT username FROM dbo.users WHERE owner_key = @ownerKey");
+    return result.recordset[0]?.username || null;
+  }
+
+  const database = getSqliteDatabase();
+  return database.prepare("SELECT username FROM users WHERE owner_key = ?").get(scopedOwnerKey)?.username || null;
+}
+
+async function setUsername(ownerKey, username) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  const trimmedUsername = (typeof username === "string" ? username.trim() : "").slice(0, 100);
+
+  if (!trimmedUsername) {
+    return false;
+  }
+
+  if (USE_AZURE_SQL) {
+    try {
+      const pool = await getAzureSqlPool();
+      const result = await pool
+        .request()
+        .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+        .input("username", sql.NVarChar(100), trimmedUsername)
+        .query(`
+          MERGE INTO dbo.users AS target
+          USING (SELECT @ownerKey AS owner_key, @username AS username) AS source
+          ON target.owner_key = source.owner_key
+          WHEN MATCHED THEN UPDATE SET username = source.username, updated_at = SYSUTCDATETIME()
+          WHEN NOT MATCHED THEN INSERT (owner_key, username) VALUES (source.owner_key, source.username);
+        `);
+      return true;
+    } catch (error) {
+      if (error.message && error.message.includes("UNIQUE")) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  const database = getSqliteDatabase();
+  try {
+    const stmt = database.prepare(`
+      INSERT INTO users (owner_key, username) VALUES (?, ?)
+      ON CONFLICT(owner_key) DO UPDATE SET username = excluded.username, updated_at = CURRENT_TIMESTAMP
+    `);
+    stmt.run(scopedOwnerKey, trimmedUsername);
+    return true;
+  } catch (error) {
+    if (error.message && error.message.includes("UNIQUE")) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   initializeDatabase,
   getListflair,
@@ -599,5 +678,7 @@ module.exports = {
   markEntryImageLoading,
   setEntryImageReady,
   setEntryImageError,
-  reorderEntries
+  reorderEntries,
+  getUsername,
+  setUsername
 };

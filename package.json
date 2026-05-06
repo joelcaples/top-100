@@ -20,9 +20,11 @@
   "homepage": "https://github.com/joelcaples/listflair#readme",
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
-    "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",
-    "mssql": "^12.5.2",
+    "mssql": "^12.5.2"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.9.0",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
