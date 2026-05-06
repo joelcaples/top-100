@@ -10,6 +10,11 @@ const USE_AZURE_SQL = Boolean(process.env.AZURE_SQL_CONNECTION_STRING);
 let sqliteDb;
 let sqlPoolPromise;
 
+function normalizeOwnerKey(ownerKey) {
+  const normalized = typeof ownerKey === "string" ? ownerKey.trim().slice(0, 200) : "";
+  return normalized || "local-dev";
+}
+
 function normaliseIdList(ids = []) {
   return ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
 }
@@ -52,7 +57,8 @@ async function initializeAzureSqlDatabase() {
         image_error NVARCHAR(4000) NULL,
         image_query NVARCHAR(500) NULL,
         image_result_index INT NOT NULL DEFAULT 0,
-        sort_order INT NOT NULL DEFAULT 0
+        sort_order INT NOT NULL DEFAULT 0,
+        owner_key NVARCHAR(200) NOT NULL DEFAULT 'local-dev'
       );
     END;
 
@@ -76,12 +82,16 @@ async function initializeAzureSqlDatabase() {
 
     IF COL_LENGTH('dbo.entries', 'sort_order') IS NULL
       ALTER TABLE dbo.entries ADD sort_order INT NOT NULL CONSTRAINT DF_entries_sort_order DEFAULT 0;
+
+    IF COL_LENGTH('dbo.entries', 'owner_key') IS NULL
+      ALTER TABLE dbo.entries ADD owner_key NVARCHAR(200) NOT NULL CONSTRAINT DF_entries_owner_key DEFAULT 'local-dev';
   `);
 
   const orderedRows = await pool.request().query(`
-    SELECT id
+    SELECT id, owner_key
     FROM dbo.entries
     ORDER BY
+      owner_key ASC,
       CASE WHEN sort_order IS NULL OR sort_order <= 0 THEN 1 ELSE 0 END,
       sort_order ASC,
       created_at ASC,
@@ -91,12 +101,19 @@ async function initializeAzureSqlDatabase() {
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
   try {
+    const ownerSortOrder = new Map();
+
     for (let index = 0; index < orderedRows.recordset.length; index += 1) {
       const id = orderedRows.recordset[index].id;
+      const ownerKey = normalizeOwnerKey(orderedRows.recordset[index].owner_key);
+      const nextSortOrder = (ownerSortOrder.get(ownerKey) || 0) + 1;
+
       await new sql.Request(transaction)
         .input("id", sql.Int, id)
-        .input("sortOrder", sql.Int, index + 1)
+        .input("sortOrder", sql.Int, nextSortOrder)
         .query("UPDATE dbo.entries SET sort_order = @sortOrder WHERE id = @id");
+
+      ownerSortOrder.set(ownerKey, nextSortOrder);
     }
     await transaction.commit();
   } catch (error) {
@@ -149,12 +166,17 @@ function initializeSqliteDatabase() {
     database.exec("ALTER TABLE entries ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
   }
 
+  if (!columns.has("owner_key")) {
+    database.exec("ALTER TABLE entries ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'local-dev'");
+  }
+
   const rows = database
     .prepare(
       `
-      SELECT id
+      SELECT id, owner_key
       FROM entries
       ORDER BY
+        owner_key ASC,
         CASE WHEN sort_order IS NULL OR sort_order <= 0 THEN 1 ELSE 0 END,
         sort_order ASC,
         created_at ASC,
@@ -165,8 +187,14 @@ function initializeSqliteDatabase() {
 
   const reorder = database.prepare("UPDATE entries SET sort_order = ? WHERE id = ?");
   const normalise = database.transaction(() => {
+    const ownerSortOrder = new Map();
+
     rows.forEach((row, index) => {
-      reorder.run(index + 1, row.id);
+      const ownerKey = normalizeOwnerKey(row.owner_key);
+      const nextSortOrder = (ownerSortOrder.get(ownerKey) || 0) + 1;
+
+      reorder.run(nextSortOrder, row.id);
+      ownerSortOrder.set(ownerKey, nextSortOrder);
     });
   });
   normalise();
@@ -181,17 +209,22 @@ async function initializeDatabase() {
   initializeSqliteDatabase();
 }
 
-async function getListflair(size = 100) {
+async function getListflair(ownerKey, size = 100) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   const normalized = Number.isNaN(Number(size)) ? 100 : Number(size);
   const cappedSize = Math.max(1, Math.min(normalized, 100));
 
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
-    const totalResult = await pool.request().query("SELECT COUNT(1) AS count FROM dbo.entries");
+    const totalResult = await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .query("SELECT COUNT(1) AS count FROM dbo.entries WHERE owner_key = @ownerKey");
     const totalEntries = Number(totalResult.recordset[0]?.count || 0);
 
     const selectionResult = await pool
       .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
       .input("limit", sql.Int, cappedSize)
       .query(`
         SELECT TOP (@limit)
@@ -201,6 +234,7 @@ async function getListflair(size = 100) {
           image_url AS imageUrl,
           image_status AS imageStatus
         FROM dbo.entries
+        WHERE owner_key = @ownerKey
         ORDER BY sort_order ASC, id ASC
       `);
 
@@ -213,12 +247,14 @@ async function getListflair(size = 100) {
   }
 
   const database = getSqliteDatabase();
-  const totalEntries = database.prepare("SELECT COUNT(1) AS count FROM entries").get().count;
+  const totalEntries = database
+    .prepare("SELECT COUNT(1) AS count FROM entries WHERE owner_key = ?")
+    .get(scopedOwnerKey).count;
   const selection = database
     .prepare(
-      "SELECT id, name, category, image_url AS imageUrl, image_status AS imageStatus FROM entries ORDER BY sort_order ASC, id ASC LIMIT ?"
+      "SELECT id, name, category, image_url AS imageUrl, image_status AS imageStatus FROM entries WHERE owner_key = ? ORDER BY sort_order ASC, id ASC LIMIT ?"
     )
-    .all(cappedSize);
+    .all(scopedOwnerKey, cappedSize);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -228,36 +264,44 @@ async function getListflair(size = 100) {
   };
 }
 
-async function deleteEntry(id) {
+async function deleteEntry(ownerKey, id) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
-    const result = await pool.request().input("id", sql.Int, id).query("DELETE FROM dbo.entries WHERE id = @id");
+    const result = await pool
+      .request()
+      .input("id", sql.Int, id)
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .query("DELETE FROM dbo.entries WHERE id = @id AND owner_key = @ownerKey");
     return result.rowsAffected[0] > 0;
   }
 
   const database = getSqliteDatabase();
-  const result = database.prepare("DELETE FROM entries WHERE id = ?").run(id);
+  const result = database.prepare("DELETE FROM entries WHERE id = ? AND owner_key = ?").run(id, scopedOwnerKey);
   return result.changes > 0;
 }
 
-async function addEntry(name, category) {
+async function addEntry(ownerKey, name, category) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
     const sortResult = await pool
       .request()
-      .query("SELECT ISNULL(MAX(sort_order), 0) + 1 AS nextSortOrder FROM dbo.entries");
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .query("SELECT ISNULL(MAX(sort_order), 0) + 1 AS nextSortOrder FROM dbo.entries WHERE owner_key = @ownerKey");
     const nextSortOrder = Number(sortResult.recordset[0]?.nextSortOrder || 1);
 
     const result = await pool
       .request()
       .input("name", sql.NVarChar(200), name)
       .input("category", sql.NVarChar(80), category)
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
       .input("sortOrder", sql.Int, nextSortOrder)
       .query(`
-        INSERT INTO dbo.entries (name, category, sort_order)
+        INSERT INTO dbo.entries (name, category, sort_order, owner_key)
         OUTPUT INSERTED.id, INSERTED.name, INSERTED.category, INSERTED.image_url AS imageUrl,
                INSERTED.image_status AS imageStatus, INSERTED.image_source AS imageSource
-        VALUES (@name, @category, @sortOrder)
+        VALUES (@name, @category, @sortOrder, @ownerKey)
       `);
 
     return result.recordset[0];
@@ -265,11 +309,13 @@ async function addEntry(name, category) {
 
   const database = getSqliteDatabase();
   const nextSortOrder = Number(
-    database.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS nextSortOrder FROM entries").get().nextSortOrder
+    database
+      .prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS nextSortOrder FROM entries WHERE owner_key = ?")
+      .get(scopedOwnerKey).nextSortOrder
   );
   const result = database
-    .prepare("INSERT INTO entries (name, category, sort_order) VALUES (?, ?, ?)")
-    .run(name, category, nextSortOrder);
+    .prepare("INSERT INTO entries (name, category, sort_order, owner_key) VALUES (?, ?, ?, ?)")
+    .run(name, category, nextSortOrder, scopedOwnerKey);
   return {
     id: result.lastInsertRowid,
     name,
@@ -280,7 +326,8 @@ async function addEntry(name, category) {
   };
 }
 
-async function updateEntry(id, name, category) {
+async function updateEntry(ownerKey, id, name, category) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
     const result = await pool
@@ -288,6 +335,7 @@ async function updateEntry(id, name, category) {
       .input("id", sql.Int, id)
       .input("name", sql.NVarChar(200), name)
       .input("category", sql.NVarChar(80), category)
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
       .query(`
         UPDATE dbo.entries
         SET name = @name,
@@ -298,7 +346,7 @@ async function updateEntry(id, name, category) {
             image_error = NULL,
             image_query = NULL,
             image_result_index = 0
-        WHERE id = @id
+        WHERE id = @id AND owner_key = @ownerKey
       `);
 
     return result.rowsAffected[0] > 0 ? { id, name, category } : null;
@@ -316,17 +364,18 @@ async function updateEntry(id, name, category) {
           image_error = NULL,
           image_query = NULL,
           image_result_index = 0
-      WHERE id = ?
+      WHERE id = ? AND owner_key = ?
     `)
-    .run(name, category, id);
+    .run(name, category, id, scopedOwnerKey);
 
   return result.changes > 0 ? { id, name, category } : null;
 }
 
-async function getEntry(id) {
+async function getEntry(ownerKey, id) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
-    const result = await pool.request().input("id", sql.Int, id).query(`
+    const result = await pool.request().input("id", sql.Int, id).input("ownerKey", sql.NVarChar(200), scopedOwnerKey).query(`
       SELECT
         id,
         name,
@@ -338,7 +387,7 @@ async function getEntry(id) {
         image_query AS imageQuery,
         image_result_index AS imageResultIndex
       FROM dbo.entries
-      WHERE id = @id
+      WHERE id = @id AND owner_key = @ownerKey
     `);
 
     return result.recordset[0] || null;
@@ -359,25 +408,27 @@ async function getEntry(id) {
         image_query AS imageQuery,
         image_result_index AS imageResultIndex
       FROM entries
-      WHERE id = ?
+      WHERE id = ? AND owner_key = ?
     `)
-      .get(id) || null
+      .get(id, scopedOwnerKey) || null
   );
 }
 
-async function markEntryImageLoading(id, imageResultIndex = 0) {
+async function markEntryImageLoading(ownerKey, id, imageResultIndex = 0) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
     const result = await pool
       .request()
       .input("id", sql.Int, id)
       .input("imageResultIndex", sql.Int, imageResultIndex)
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
       .query(`
         UPDATE dbo.entries
         SET image_status = 'loading',
             image_error = NULL,
             image_result_index = @imageResultIndex
-        WHERE id = @id
+        WHERE id = @id AND owner_key = @ownerKey
       `);
 
     return result.rowsAffected[0] > 0;
@@ -390,14 +441,15 @@ async function markEntryImageLoading(id, imageResultIndex = 0) {
       SET image_status = 'loading',
           image_error = NULL,
           image_result_index = ?
-      WHERE id = ?
+      WHERE id = ? AND owner_key = ?
     `)
-    .run(imageResultIndex, id);
+    .run(imageResultIndex, id, scopedOwnerKey);
 
   return result.changes > 0;
 }
 
-async function setEntryImageReady(id, imageUrl, imageSource = null, imageQuery = null, imageResultIndex = 0) {
+async function setEntryImageReady(ownerKey, id, imageUrl, imageSource = null, imageQuery = null, imageResultIndex = 0) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
     const result = await pool
@@ -407,6 +459,7 @@ async function setEntryImageReady(id, imageUrl, imageSource = null, imageQuery =
       .input("imageSource", sql.NVarChar(2048), imageSource)
       .input("imageQuery", sql.NVarChar(500), imageQuery)
       .input("imageResultIndex", sql.Int, imageResultIndex)
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
       .query(`
         UPDATE dbo.entries
         SET image_url = @imageUrl,
@@ -415,7 +468,7 @@ async function setEntryImageReady(id, imageUrl, imageSource = null, imageQuery =
             image_error = NULL,
             image_query = @imageQuery,
             image_result_index = @imageResultIndex
-        WHERE id = @id
+        WHERE id = @id AND owner_key = @ownerKey
       `);
 
     return result.rowsAffected[0] > 0;
@@ -431,25 +484,27 @@ async function setEntryImageReady(id, imageUrl, imageSource = null, imageQuery =
           image_error = NULL,
           image_query = ?,
           image_result_index = ?
-      WHERE id = ?
+      WHERE id = ? AND owner_key = ?
     `)
-    .run(imageUrl, imageSource, imageQuery, imageResultIndex, id);
+    .run(imageUrl, imageSource, imageQuery, imageResultIndex, id, scopedOwnerKey);
 
   return result.changes > 0;
 }
 
-async function setEntryImageError(id, imageError) {
+async function setEntryImageError(ownerKey, id, imageError) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
     const result = await pool
       .request()
       .input("id", sql.Int, id)
       .input("imageError", sql.NVarChar(4000), imageError)
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
       .query(`
         UPDATE dbo.entries
         SET image_status = 'error',
             image_error = @imageError
-        WHERE id = @id
+        WHERE id = @id AND owner_key = @ownerKey
       `);
 
     return result.rowsAffected[0] > 0;
@@ -461,14 +516,15 @@ async function setEntryImageError(id, imageError) {
       UPDATE entries
       SET image_status = 'error',
           image_error = ?
-      WHERE id = ?
+      WHERE id = ? AND owner_key = ?
     `)
-    .run(imageError, id);
+    .run(imageError, id, scopedOwnerKey);
 
   return result.changes > 0;
 }
 
-async function reorderEntries(orderedIds = []) {
+async function reorderEntries(ownerKey, orderedIds = []) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   const ids = normaliseIdList(orderedIds);
   if (!ids.length || !hasUniqueIds(ids)) {
     return false;
@@ -476,7 +532,10 @@ async function reorderEntries(orderedIds = []) {
 
   if (USE_AZURE_SQL) {
     const pool = await getAzureSqlPool();
-    const totalResult = await pool.request().query("SELECT COUNT(1) AS count FROM dbo.entries");
+    const totalResult = await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .query("SELECT COUNT(1) AS count FROM dbo.entries WHERE owner_key = @ownerKey");
     const totalEntries = Number(totalResult.recordset[0]?.count || 0);
     if (totalEntries !== ids.length) {
       return false;
@@ -490,8 +549,9 @@ async function reorderEntries(orderedIds = []) {
         const id = ids[index];
         const result = await new sql.Request(transaction)
           .input("id", sql.Int, id)
+          .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
           .input("sortOrder", sql.Int, index + 1)
-          .query("UPDATE dbo.entries SET sort_order = @sortOrder WHERE id = @id");
+          .query("UPDATE dbo.entries SET sort_order = @sortOrder WHERE id = @id AND owner_key = @ownerKey");
         updatedCount += Number(result.rowsAffected[0] || 0);
       }
 
@@ -509,16 +569,18 @@ async function reorderEntries(orderedIds = []) {
   }
 
   const database = getSqliteDatabase();
-  const totalEntries = Number(database.prepare("SELECT COUNT(1) AS count FROM entries").get().count || 0);
+  const totalEntries = Number(
+    database.prepare("SELECT COUNT(1) AS count FROM entries WHERE owner_key = ?").get(scopedOwnerKey).count || 0
+  );
   if (totalEntries !== ids.length) {
     return false;
   }
 
-  const reorder = database.prepare("UPDATE entries SET sort_order = ? WHERE id = ?");
+  const reorder = database.prepare("UPDATE entries SET sort_order = ? WHERE id = ? AND owner_key = ?");
   const applyReorder = database.transaction(() => {
     let updatedCount = 0;
     ids.forEach((id, index) => {
-      const result = reorder.run(index + 1, id);
+      const result = reorder.run(index + 1, id, scopedOwnerKey);
       updatedCount += Number(result.changes || 0);
     });
     return updatedCount === ids.length;

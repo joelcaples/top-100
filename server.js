@@ -29,6 +29,7 @@ const USE_AZURE_SQL = Boolean(process.env.AZURE_SQL_CONNECTION_STRING);
 const USE_BLOB_STORAGE = Boolean(process.env.AZURE_STORAGE_CONNECTION_STRING);
 const STORAGE_CONTAINER = process.env.AZURE_STORAGE_CONTAINER || "generated-images";
 const PUBLIC_SITE_URL = process.env.PUBLIC_SITE_URL;
+const LOCAL_DEV_USER_KEY = process.env.LOCAL_DEV_USER_KEY || "local-dev";
 
 app.set("trust proxy", true);
 
@@ -51,14 +52,15 @@ function getRequestedImageIndex(entry, forceRefresh = false) {
   return forceRefresh ? Math.max(0, currentIndex + 1) : Math.max(0, currentIndex);
 }
 
-function startImageLookup(entryId) {
-  if (pendingImageLookups.has(entryId)) {
-    return pendingImageLookups.get(entryId);
+function startImageLookup(ownerKey, entryId) {
+  const lookupKey = `${ownerKey}:${entryId}`;
+  if (pendingImageLookups.has(lookupKey)) {
+    return pendingImageLookups.get(lookupKey);
   }
 
   const lookupPromise = (async () => {
     try {
-      const entry = await getEntry(entryId);
+      const entry = await getEntry(ownerKey, entryId);
       if (!entry) {
         return;
       }
@@ -66,6 +68,7 @@ function startImageLookup(entryId) {
       const previousImageUrl = entry.imageUrl;
       const image = await findAndCacheImageForEntry(entry, getRequestedImageIndex(entry));
       await setEntryImageReady(
+        ownerKey,
         entryId,
         image.imageUrl,
         image.imageSource,
@@ -77,13 +80,13 @@ function startImageLookup(entryId) {
         await removeCachedImage(previousImageUrl);
       }
     } catch (error) {
-      await setEntryImageError(entryId, error.message);
+      await setEntryImageError(ownerKey, entryId, error.message);
     } finally {
-      pendingImageLookups.delete(entryId);
+      pendingImageLookups.delete(lookupKey);
     }
   })();
 
-  pendingImageLookups.set(entryId, lookupPromise);
+  pendingImageLookups.set(lookupKey, lookupPromise);
   return lookupPromise;
 }
 
@@ -93,6 +96,59 @@ function getSiteOrigin(req) {
   }
 
   return `${req.protocol}://${req.get("host")}`;
+}
+
+function decodeClientPrincipalHeader(headerValue) {
+  if (typeof headerValue !== "string" || !headerValue.trim()) {
+    return null;
+  }
+
+  try {
+    const decoded = Buffer.from(headerValue, "base64").toString("utf8");
+    return JSON.parse(decoded);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function getClaimValue(claims = [], claimType) {
+  const match = claims.find((claim) => claim.typ === claimType);
+  return typeof match?.val === "string" ? match.val : "";
+}
+
+function buildUserContext(req) {
+  const principal = decodeClientPrincipalHeader(req.get("x-ms-client-principal"));
+  const claims = Array.isArray(principal?.claims) ? principal.claims : [];
+  const provider = req.get("x-ms-client-principal-idp") || principal?.auth_typ || "local";
+  const principalId =
+    req.get("x-ms-client-principal-id") ||
+    principal?.userId ||
+    getClaimValue(claims, "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier") ||
+    getClaimValue(claims, "sub") ||
+    "";
+
+  const displayName =
+    req.get("x-ms-client-principal-name") ||
+    principal?.userDetails ||
+    getClaimValue(claims, "name") ||
+    getClaimValue(claims, "preferred_username") ||
+    "";
+
+  const hasAuthenticatedIdentity = Boolean(principalId);
+  if (!hasAuthenticatedIdentity) {
+    return {
+      key: LOCAL_DEV_USER_KEY,
+      isAuthenticated: false,
+      displayName: "Local User"
+    };
+  }
+
+  const ownerKey = `${provider}:${principalId}`.slice(0, 200);
+  return {
+    key: ownerKey,
+    isAuthenticated: true,
+    displayName: displayName || "Signed-in User"
+  };
 }
 
 async function sendIndexHtml(req, res, next) {
@@ -109,14 +165,25 @@ async function sendIndexHtml(req, res, next) {
 app.get(["/", "/index.html"], sendIndexHtml);
 app.use(express.static(path.join(__dirname), { index: false }));
 app.use("/generated-images", express.static(GENERATED_IMAGE_DIR));
+app.use((req, _res, next) => {
+  req.userContext = buildUserContext(req);
+  next();
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/me", (req, res) => {
+  res.json({
+    isAuthenticated: req.userContext.isAuthenticated,
+    displayName: req.userContext.displayName
+  });
+});
+
 app.get("/api/listflair", async (req, res) => {
   const { size } = req.query;
-  const payload = await getListflair(size);
+  const payload = await getListflair(req.userContext.key, size);
   res.json(payload);
 });
 
@@ -127,7 +194,7 @@ app.post("/api/entries", async (req, res) => {
   if (!name || !category || typeof name !== "string" || typeof category !== "string") {
     return res.status(400).json({ error: "name and category are required strings" });
   }
-  const entry = await addEntry(name.trim().slice(0, 200), category.trim().slice(0, 80));
+  const entry = await addEntry(req.userContext.key, name.trim().slice(0, 200), category.trim().slice(0, 80));
   res.status(201).json(entry);
 });
 
@@ -137,7 +204,7 @@ app.patch("/api/entries/reorder", async (req, res) => {
     return res.status(400).json({ error: "orderedIds must be a non-empty array" });
   }
 
-  const successful = await reorderEntries(orderedIds);
+  const successful = await reorderEntries(req.userContext.key, orderedIds);
   if (!successful) {
     return res.status(400).json({ error: "Invalid reorder payload" });
   }
@@ -151,8 +218,8 @@ app.delete("/api/entries/:id", async (req, res) => {
     return res.status(400).json({ error: "Invalid id" });
   }
 
-  const existingEntry = await getEntry(id);
-  const deleted = await deleteEntry(id);
+  const existingEntry = await getEntry(req.userContext.key, id);
+  const deleted = await deleteEntry(req.userContext.key, id);
   if (!deleted) {
     return res.status(404).json({ error: "Entry not found" });
   }
@@ -173,8 +240,8 @@ app.patch("/api/entries/:id", async (req, res) => {
   if (!name || !category || typeof name !== "string" || typeof category !== "string") {
     return res.status(400).json({ error: "name and category are required strings" });
   }
-  const existingEntry = await getEntry(id);
-  const updated = await updateEntry(id, name.trim().slice(0, 200), category.trim().slice(0, 80));
+  const existingEntry = await getEntry(req.userContext.key, id);
+  const updated = await updateEntry(req.userContext.key, id, name.trim().slice(0, 200), category.trim().slice(0, 80));
   if (!updated) {
     return res.status(404).json({ error: "Entry not found" });
   }
@@ -197,7 +264,7 @@ app.get("/api/entries/:id/image/search", async (req, res) => {
     return res.status(400).json({ error: "q is required" });
   }
 
-  const entry = await getEntry(id);
+  const entry = await getEntry(req.userContext.key, id);
   if (!entry) {
     return res.status(404).json({ error: "Entry not found" });
   }
@@ -212,7 +279,7 @@ app.get("/api/entries/:id/image", async (req, res) => {
     return res.status(400).json({ error: "Invalid id" });
   }
 
-  const entry = await getEntry(id);
+  const entry = await getEntry(req.userContext.key, id);
   if (!entry) {
     return res.status(404).json({ error: "Entry not found" });
   }
@@ -226,7 +293,7 @@ app.post("/api/entries/:id/image", async (req, res) => {
     return res.status(400).json({ error: "Invalid id" });
   }
 
-  const entry = await getEntry(id);
+  const entry = await getEntry(req.userContext.key, id);
   if (!entry) {
     return res.status(404).json({ error: "Entry not found" });
   }
@@ -236,11 +303,11 @@ app.post("/api/entries/:id/image", async (req, res) => {
   }
 
   if (entry.imageStatus !== "loading") {
-    await markEntryImageLoading(id, getRequestedImageIndex(entry));
+    await markEntryImageLoading(req.userContext.key, id, getRequestedImageIndex(entry));
   }
 
-  startImageLookup(id);
-  const loadingEntry = await getEntry(id);
+  startImageLookup(req.userContext.key, id);
+  const loadingEntry = await getEntry(req.userContext.key, id);
   return sendImagePayload(res, loadingEntry, 202);
 });
 
@@ -250,7 +317,7 @@ app.post("/api/entries/:id/image/refresh", async (req, res) => {
     return res.status(400).json({ error: "Invalid id" });
   }
 
-  const entry = await getEntry(id);
+  const entry = await getEntry(req.userContext.key, id);
   if (!entry) {
     return res.status(404).json({ error: "Entry not found" });
   }
@@ -259,9 +326,9 @@ app.post("/api/entries/:id/image/refresh", async (req, res) => {
     return sendImagePayload(res, entry, 202);
   }
 
-  await markEntryImageLoading(id, getRequestedImageIndex(entry, true));
-  startImageLookup(id);
-  const loadingEntry = await getEntry(id);
+  await markEntryImageLoading(req.userContext.key, id, getRequestedImageIndex(entry, true));
+  startImageLookup(req.userContext.key, id);
+  const loadingEntry = await getEntry(req.userContext.key, id);
   return sendImagePayload(res, loadingEntry, 202);
 });
 
@@ -279,7 +346,7 @@ app.post("/api/entries/:id/image/pick", async (req, res) => {
     return res.status(400).json({ error: "fetchUrl must use https" });
   }
 
-  const entry = await getEntry(id);
+  const entry = await getEntry(req.userContext.key, id);
   if (!entry) {
     return res.status(404).json({ error: "Entry not found" });
   }
@@ -293,16 +360,16 @@ app.post("/api/entries/:id/image/pick", async (req, res) => {
       query: typeof query === "string" ? query.slice(0, 500) : ""
     });
 
-    await setEntryImageReady(id, cached.imageUrl, cached.imageSource, cached.imageQuery, 0);
+    await setEntryImageReady(req.userContext.key, id, cached.imageUrl, cached.imageSource, cached.imageQuery, 0);
 
     if (previousImageUrl && previousImageUrl !== cached.imageUrl) {
       await removeCachedImage(previousImageUrl);
     }
 
-    const updatedEntry = await getEntry(id);
+    const updatedEntry = await getEntry(req.userContext.key, id);
     return sendImagePayload(res, updatedEntry);
   } catch (error) {
-    await setEntryImageError(id, error.message);
+    await setEntryImageError(req.userContext.key, id, error.message);
     return res.status(500).json({ error: "Could not cache the selected image" });
   }
 });

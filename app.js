@@ -14,6 +14,9 @@ const modalDeleteBtn = document.getElementById("modalDeleteBtn");
 const modalSearchPanel = document.getElementById("modalSearchPanel");
 const modalSearchInput = document.getElementById("modalSearchInput");
 const modalSearchResults = document.getElementById("modalSearchResults");
+const signInLink = document.getElementById("signInLink");
+const signOutLink = document.getElementById("signOutLink");
+const authUserDisplay = document.getElementById("authUserDisplay");
 const LOADING_IMAGE_SRC = "/image-loading.svg";
 const imagePolls = new Map();
 const modalState = {
@@ -1113,3 +1116,37 @@ if (rerollBtn) {
 
 registerServiceWorker();
 fetchListflair();
+
+async function initAuth() {
+  const isLocalHost =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+  try {
+    const response = await fetch("/api/me", { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      return;
+    }
+    const { isAuthenticated, displayName } = await response.json();
+
+    if (isAuthenticated) {
+      if (authUserDisplay) {
+        authUserDisplay.textContent = displayName || "Signed in";
+        authUserDisplay.hidden = false;
+      }
+      if (signOutLink) {
+        signOutLink.hidden = false;
+      }
+      if (signInLink) {
+        signInLink.hidden = true;
+      }
+    } else if (!isLocalHost) {
+      if (signInLink) {
+        signInLink.hidden = false;
+      }
+    }
+  } catch {
+    // Auth widget stays hidden on error; not critical
+  }
+}
+
+initAuth();

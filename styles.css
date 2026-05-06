@@ -220,6 +220,28 @@ body {
   cursor: wait;
 }
 
+.button-deco--sm {
+  font-size: 0.8rem;
+  padding: 0.5rem 0.9rem 0.46rem;
+  letter-spacing: 0.18em;
+}
+
+.auth-user {
+  font-family: "Jost", sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #b89a67;
+  align-self: center;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-user[hidden] {
+  display: none;
+}
+
 .grid-wrap {
   margin-top: 1.1rem;
   border-radius: 6px;
