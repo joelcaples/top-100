@@ -15,8 +15,16 @@ const modalSearchPanel = document.getElementById("modalSearchPanel");
 const modalSearchInput = document.getElementById("modalSearchInput");
 const modalSearchResults = document.getElementById("modalSearchResults");
 const signInLink = document.getElementById("signInLink");
-const signOutLink = document.getElementById("signOutLink");
-const authUserDisplay = document.getElementById("authUserDisplay");
+const usernameModal = document.getElementById("usernameModal");
+const usernameInput = document.getElementById("usernameInput");
+const usernameSetBtn = document.getElementById("usernameSetBtn");
+const usernameError = document.getElementById("usernameError");
+const accountMenuBtn = document.getElementById("accountMenuBtn");
+const accountMenu = document.getElementById("accountMenu");
+const accountUsername = document.getElementById("accountUsername");
+const accountProvider = document.getElementById("accountProvider");
+const changeUsernameBtn = document.getElementById("changeUsernameBtn");
+const accountLogoutLink = document.getElementById("accountLogoutLink");
 const LOADING_IMAGE_SRC = "/image-loading.svg";
 const imagePolls = new Map();
 const modalState = {
@@ -952,6 +960,12 @@ async function fetchListflair() {
       }
     });
 
+    if (response.status === 401) {
+      statusMsg.textContent = "Sign in to load your personal board.";
+      topGrid.innerHTML = "";
+      return;
+    }
+
     if (!response.ok) {
       throw new Error(`Request failed with status ${response.status}`);
     }
@@ -969,9 +983,6 @@ async function fetchListflair() {
     }
   }
 }
-
-const installBtn = document.getElementById("installBtn");
-let deferredInstallPrompt;
 
 if (modalRefreshBtn) {
   modalRefreshBtn.innerHTML = getRefreshButtonMarkup();
@@ -1080,77 +1091,235 @@ async function registerServiceWorker() {
   }
 }
 
-window.addEventListener("beforeinstallprompt", (event) => {
-  event.preventDefault();
-  deferredInstallPrompt = event;
-
-  if (installBtn) {
-    installBtn.hidden = false;
-  }
-});
-
-window.addEventListener("appinstalled", () => {
-  deferredInstallPrompt = null;
-
-  if (installBtn) {
-    installBtn.hidden = true;
-  }
-});
-
-if (installBtn) {
-  installBtn.addEventListener("click", async () => {
-    if (!deferredInstallPrompt) {
-      return;
-    }
-
-    deferredInstallPrompt.prompt();
-    await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = null;
-    installBtn.hidden = true;
-  });
-}
+// PWA install prompt disabled
 
 if (rerollBtn) {
   rerollBtn.addEventListener("click", fetchListflair);
 }
 
 registerServiceWorker();
-fetchListflair();
+
+function showUsernameModal() {
+  if (!usernameModal) return;
+  usernameModal.hidden = false;
+  document.body.classList.add("modal-open");
+  if (usernameInput) {
+    usernameInput.value = "";
+    usernameInput.focus();
+  }
+  if (usernameError) {
+    usernameError.textContent = "";
+    usernameError.style.display = "none";
+  }
+}
+
+function closeUsernameModal() {
+  if (!usernameModal) return;
+  usernameModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+if (usernameModal) {
+  usernameModal.addEventListener("click", (event) => {
+    if (event.target.closest("[data-username-close]")) {
+      closeUsernameModal();
+    }
+  });
+}
+
+async function handleSetUsername() {
+  if (!usernameInput || !usernameSetBtn) return;
+
+  const username = usernameInput.value.trim();
+  if (!username) {
+    if (usernameError) {
+      usernameError.textContent = "Username cannot be empty";
+      usernameError.style.display = "block";
+    }
+    return;
+  }
+
+  usernameSetBtn.disabled = true;
+  if (usernameError) {
+    usernameError.textContent = "";
+    usernameError.style.display = "none";
+  }
+
+  try {
+    const response = await fetch("/api/user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ username })
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || "Failed to set username");
+    }
+
+    closeUsernameModal();
+    if (accountUsername) {
+      accountUsername.textContent = username;
+    }
+    await fetchListflair();
+  } catch (error) {
+    console.error("Could not set username:", error);
+    if (usernameError) {
+      usernameError.textContent = error.message || "Could not set username. Try another.";
+      usernameError.style.display = "block";
+    }
+  } finally {
+    usernameSetBtn.disabled = false;
+  }
+}
+
+if (usernameSetBtn) {
+  usernameSetBtn.addEventListener("click", handleSetUsername);
+}
+
+if (usernameInput) {
+  usernameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSetUsername();
+    }
+  });
+}
+
+function showAccountMenu() {
+  if (!accountMenu) return;
+  accountMenu.hidden = false;
+  if (accountMenuBtn) {
+    accountMenuBtn.setAttribute("aria-expanded", "true");
+  }
+}
+
+function closeAccountMenu() {
+  if (!accountMenu) return;
+  accountMenu.hidden = true;
+  if (accountMenuBtn) {
+    accountMenuBtn.setAttribute("aria-expanded", "false");
+  }
+}
+
+function updateAccountMenuDisplay(userData) {
+  if (accountUsername && userData.username) {
+    accountUsername.textContent = userData.username;
+  }
+  if (accountProvider) {
+    const provider = userData.authProvider || "unknown";
+    accountProvider.textContent = provider.charAt(0).toUpperCase() + provider.slice(1);
+  }
+}
+
+if (accountMenuBtn) {
+  accountMenuBtn.addEventListener("click", showAccountMenu);
+}
+
+if (accountMenu) {
+  accountMenu.addEventListener("click", (event) => {
+    if (event.target.closest("[data-account-close]")) {
+      closeAccountMenu();
+    }
+  });
+}
+
+if (changeUsernameBtn) {
+  changeUsernameBtn.addEventListener("click", () => {
+    closeAccountMenu();
+    showUsernameModal();
+  });
+}
+
+if (accountLogoutLink) {
+  accountLogoutLink.addEventListener("click", (e) => {
+    // Set logout flag to prevent auto-login
+    sessionStorage.setItem("listflair_logging_out", "true");
+    // Let the logout link navigate normally
+  });
+}
 
 async function initAuth() {
   const isLocalHost =
     location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  let authState = { isAuthenticated: false, isLocalHost, username: null };
 
-  if (signInLink && !isLocalHost) {
-    signInLink.hidden = false;
+  // Check if we just logged out - if so, clear state and wait for fresh login
+  const justLoggedOut = sessionStorage.getItem("listflair_logging_out") === "true";
+  if (justLoggedOut) {
+    sessionStorage.removeItem("listflair_logging_out");
+    // Clear UI state on logout
+    if (accountMenuBtn) accountMenuBtn.hidden = true;
+    if (signInLink) signInLink.hidden = false;
+    return authState;
   }
 
   try {
     const response = await fetch("/api/me", { headers: { Accept: "application/json" } });
     if (!response.ok) {
-      return;
+      return authState;
     }
-    const { isAuthenticated, displayName } = await response.json();
+    const { isAuthenticated, displayName, username, loginUrl, logoutUrl, authProvider } = await response.json();
+    authState = { isAuthenticated: Boolean(isAuthenticated), isLocalHost, username };
+
+    if (signInLink && loginUrl) {
+      signInLink.href = loginUrl;
+    }
+    if (accountLogoutLink && logoutUrl) {
+      accountLogoutLink.href = logoutUrl;
+    }
 
     if (isAuthenticated) {
-      if (authUserDisplay) {
-        authUserDisplay.textContent = displayName || "Signed in";
-        authUserDisplay.hidden = false;
-      }
-      if (signOutLink) {
-        signOutLink.hidden = false;
+      if (accountMenuBtn) {
+        accountMenuBtn.hidden = false;
       }
       if (signInLink) {
         signInLink.hidden = true;
+      }
+
+      updateAccountMenuDisplay({ username, authProvider });
+
+      if (!username && usernameModal) {
+        showUsernameModal();
       }
     } else if (!isLocalHost) {
       if (signInLink) {
         signInLink.hidden = false;
       }
+      if (accountMenuBtn) {
+        accountMenuBtn.hidden = true;
+      }
+
+      statusMsg.textContent = "Sign in to create and load your personal board.";
+    } else {
+      // Not authenticated and on localhost: show sign-in button
+      if (signInLink) {
+        signInLink.hidden = false;
+      }
+      if (accountMenuBtn) {
+        accountMenuBtn.hidden = true;
+      }
     }
   } catch {
     // Auth widget stays hidden on error; not critical
   }
+
+  return authState;
 }
 
-initAuth();
+async function bootstrapApp() {
+  const { isAuthenticated, isLocalHost, username } = await initAuth();
+  if (isAuthenticated && !username) {
+    return;
+  }
+  if (isAuthenticated) {
+    await fetchListflair();
+    return;
+  }
+
+  // Not authenticated: show empty state
+  topGrid.innerHTML = "";
+  statusMsg.textContent = "Sign in to see your personal board.";
+}
+
+bootstrapApp();

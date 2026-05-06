@@ -34,6 +34,7 @@ In your Azure Web App -> Settings -> Environment variables (or Configuration), a
 - `AZURE_SQL_CONNECTION_STRING`
 - `AZURE_STORAGE_CONNECTION_STRING`
 - `AZURE_STORAGE_CONTAINER` (optional, defaults to `generated-images`)
+- `DEFAULT_AUTH_PROVIDER` (optional, defaults to `github`)
 
 Use this format:
 
@@ -43,6 +44,18 @@ Also ensure:
 
 - Runtime stack: Node 20+
 - Startup command: `npm start`
+
+## 2.1 Enable Authentication (required for per-user boards)
+
+The app now requires sign-in for board API access in hosted environments (non-localhost). That ensures each board is scoped to the signed-in account.
+
+In Azure Web App -> Authentication:
+
+1. Turn on App Service authentication.
+2. Add at least one identity provider (for example GitHub).
+3. Set unauthenticated requests to allow anonymous to the site so users can reach the home page and click Sign In. API routes enforce auth server-side.
+
+If you use a provider other than GitHub, set `DEFAULT_AUTH_PROVIDER` to match the Easy Auth provider key used by `/.auth/login/<provider>`.
 
 ## 3. GitHub Actions secrets
 

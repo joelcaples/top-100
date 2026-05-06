@@ -11,7 +11,9 @@ const {
   markEntryImageLoading,
   setEntryImageReady,
   setEntryImageError,
-  reorderEntries
+  reorderEntries,
+  getUsername,
+  setUsername
 } = require("./services/listflairService");
 const {
   findAndCacheImageForEntry,
@@ -30,8 +32,19 @@ const USE_BLOB_STORAGE = Boolean(process.env.AZURE_STORAGE_CONNECTION_STRING);
 const STORAGE_CONTAINER = process.env.AZURE_STORAGE_CONTAINER || "generated-images";
 const PUBLIC_SITE_URL = process.env.PUBLIC_SITE_URL;
 const LOCAL_DEV_USER_KEY = process.env.LOCAL_DEV_USER_KEY || "local-dev";
+const DEFAULT_AUTH_PROVIDER = process.env.DEFAULT_AUTH_PROVIDER || "github";
+
+// GitHub OAuth Configuration
+const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
+
+// Local session store (in-memory, for dev only)
+const localSessions = new Map();
+
+
 
 app.set("trust proxy", true);
+app.use(express.json());
 
 function sendImagePayload(res, entry, statusCode = 200) {
   res.status(statusCode).json({
@@ -91,11 +104,123 @@ function startImageLookup(ownerKey, entryId) {
 }
 
 function getSiteOrigin(req) {
+
+  const protocol = req.protocol;
+  const host = req.get("host");
+  const currentOrigin = `${protocol}://${host}`;
+  const isLocal = currentOrigin.includes("localhost") || currentOrigin.includes("127.0.0.1") || currentOrigin.includes("[::1]");
+  
+
+  
+  // Always use the current request origin for local, even if PUBLIC_SITE_URL is set
+  if (isLocal) {
+
+    return currentOrigin;
+  }
+  
+  // For production, use PUBLIC_SITE_URL if available
   if (PUBLIC_SITE_URL) {
+
     return PUBLIC_SITE_URL.replace(/\/$/, "");
   }
 
-  return `${req.protocol}://${req.get("host")}`;
+
+  return currentOrigin;
+}
+
+function isLocalHost(hostname = "") {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+// Session cookie utilities for local OAuth
+function getSessionCookie(req) {
+  const cookies = (req.get("cookie") || "").split(";").map((c) => c.trim());
+  const sessionCookie = cookies.find((c) => c.startsWith("listflair_session="));
+  if (!sessionCookie) return null;
+  return sessionCookie.split("=")[1];
+}
+
+function setSessionCookie(res, sessionId) {
+  res.set("Set-Cookie", `listflair_session=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+}
+
+// OAuth token exchange
+async function exchangeGitHubCode(code) {
+  const url = "https://github.com/login/oauth/access_token";
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code
+      })
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error_description || data.error);
+    return data.access_token;
+  } catch (error) {
+    console.error("GitHub token exchange failed:", error);
+    throw error;
+  }
+}
+
+// Fetch GitHub user info
+async function getGitHubUser(accessToken) {
+  try {
+    const response = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `token ${accessToken}`,
+        Accept: "application/vnd.github.v3+json"
+      }
+    });
+    if (!response.ok) throw new Error("Failed to fetch user");
+    return await response.json();
+  } catch (error) {
+    console.error("GitHub user fetch failed:", error);
+    throw error;
+  }
+}
+
+// Create mock principal like Azure Easy Auth
+function createGitHubPrincipal(githubUser) {
+  return {
+    auth_typ: "github",
+    userId: `github:${githubUser.id}`,
+    userDetails: githubUser.login,
+    claims: [
+      { typ: "name", val: githubUser.name || githubUser.login },
+      { typ: "preferred_username", val: githubUser.login }
+    ]
+  };
+}
+
+function getAuthUrls(req) {
+  const origin = getSiteOrigin(req);
+  // Check if the origin is localhost (more reliable than req.hostname which may be null)
+  const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("[::1]");
+  
+
+  
+  if (isLocal) {
+    // Local OAuth flow
+    const returnUrl = encodeURIComponent(`${origin}/`);
+    const loginUrl = `/auth/login/github?redirect_uri=${returnUrl}`;
+    const logoutUrl = `/auth/logout?redirect_uri=${returnUrl}`;
+
+    return { loginUrl, logoutUrl, provider: DEFAULT_AUTH_PROVIDER };
+  }
+  
+  // Production Azure Easy Auth
+  const returnUrl = encodeURIComponent(`${origin}/`);
+  const loginUrl = `/.auth/login/${DEFAULT_AUTH_PROVIDER}?post_login_redirect_uri=${returnUrl}`;
+  const logoutUrl = `/.auth/logout?post_logout_redirect_uri=${returnUrl}`;
+
+  return { loginUrl, logoutUrl, provider: DEFAULT_AUTH_PROVIDER };
 }
 
 function decodeClientPrincipalHeader(headerValue) {
@@ -117,6 +242,37 @@ function getClaimValue(claims = [], claimType) {
 }
 
 function buildUserContext(req) {
+  // First check for local session (localhost OAuth)
+  const origin = getSiteOrigin(req);
+  const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("[::1]");
+  
+
+  
+  if (isLocal) {
+    const sessionId = getSessionCookie(req);
+
+    if (sessionId && localSessions.has(sessionId)) {
+      const principal = localSessions.get(sessionId);
+      const claims = Array.isArray(principal.claims) ? principal.claims : [];
+      const displayName =
+        principal.userDetails ||
+        getClaimValue(claims, "name") ||
+        getClaimValue(claims, "preferred_username") ||
+        "";
+      const principalId = principal.userId || "";
+      const ownerKey = `${principal.auth_typ}:${principalId}`.slice(0, 200);
+
+      return {
+        key: ownerKey,
+        isAuthenticated: true,
+        displayName: displayName || "Signed-in User"
+      };
+    }
+
+  }
+
+  // Fall back to Azure Easy Auth headers (production)
+
   const principal = decodeClientPrincipalHeader(req.get("x-ms-client-principal"));
   const claims = Array.isArray(principal?.claims) ? principal.claims : [];
   const provider = req.get("x-ms-client-principal-idp") || principal?.auth_typ || "local";
@@ -135,7 +291,9 @@ function buildUserContext(req) {
     "";
 
   const hasAuthenticatedIdentity = Boolean(principalId);
+
   if (!hasAuthenticatedIdentity) {
+
     return {
       key: LOCAL_DEV_USER_KEY,
       isAuthenticated: false,
@@ -166,19 +324,125 @@ app.get(["/", "/index.html"], sendIndexHtml);
 app.use(express.static(path.join(__dirname), { index: false }));
 app.use("/generated-images", express.static(GENERATED_IMAGE_DIR));
 app.use((req, _res, next) => {
+
   req.userContext = buildUserContext(req);
+
   next();
+});
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api")) {
+    return next();
+  }
+
+  // Public endpoints that don't require auth
+  if (req.path === "/api/health" || req.path === "/api/me" || req.path === "/api/dev/login") {
+    return next();
+  }
+
+  // All other API endpoints require authentication
+  if (!req.userContext.isAuthenticated) {
+    const authUrls = getAuthUrls(req);
+    return res.status(401).json({
+      error: "Sign in required",
+      loginUrl: authUrls.loginUrl,
+      provider: authUrls.provider
+    });
+  }
+
+  return next();
+});
+
+// Local OAuth Routes (localhost only)
+app.get("/auth/login/github", (req, res) => {
+  const origin = getSiteOrigin(req);
+  const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("[::1]");
+  if (!isLocal) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
+    return res.status(500).json({ error: "Local GitHub OAuth is not configured" });
+  }
+
+  const redirectUri = encodeURIComponent(`${origin}/auth/callback/github`);
+  const scope = encodeURIComponent("user:email");
+  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${redirectUri}&scope=${scope}`;
+  res.redirect(githubAuthUrl);
+});
+
+app.get("/auth/callback/github", async (req, res) => {
+  const origin = getSiteOrigin(req);
+  const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("[::1]");
+  if (!isLocal) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
+    return res.redirect(`/?error=oauth_not_configured`);
+  }
+
+  const { code, state } = req.query;
+  const redirectUri = req.query.redirect_uri || "/";
+
+  if (!code) {
+    return res.redirect(`${redirectUri}?error=no_code`);
+  }
+
+  try {
+    const accessToken = await exchangeGitHubCode(code);
+    const githubUser = await getGitHubUser(accessToken);
+    const principal = createGitHubPrincipal(githubUser);
+
+    // Store in local session
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    localSessions.set(sessionId, principal);
+
+    // Set session cookie and redirect
+    setSessionCookie(res, sessionId);
+    res.redirect(redirectUri);
+  } catch (error) {
+    console.error("OAuth callback error:", error);
+    res.redirect(`${redirectUri}?error=auth_failed`);
+  }
+});
+
+app.get("/auth/logout", (req, res) => {
+  const origin = getSiteOrigin(req);
+  const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("[::1]");
+  if (isLocal) {
+    const sessionId = getSessionCookie(req);
+    if (sessionId) {
+      localSessions.delete(sessionId);
+      res.set("Set-Cookie", "listflair_session=; Path=/; HttpOnly; Max-Age=0");
+    }
+  }
+
+  const redirectUri = req.query.redirect_uri || "/";
+  res.redirect(redirectUri);
 });
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/me", (req, res) => {
-  res.json({
+app.get("/api/me", async (req, res) => {
+
+  const authUrls = getAuthUrls(req);
+  const username = req.userContext.isAuthenticated ? await getUsername(req.userContext.key) : null;
+  const origin = getSiteOrigin(req);
+  const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("[::1]");
+  const response = {
     isAuthenticated: req.userContext.isAuthenticated,
-    displayName: req.userContext.displayName
-  });
+    displayName: req.userContext.displayName,
+    username,
+    loginUrl: authUrls.loginUrl,
+    logoutUrl: authUrls.logoutUrl,
+    authProvider: authUrls.provider,
+    _debug: { origin, isLocal, userContextKey: req.userContext.key }
+  };
+
+  res.json(response);
 });
 
 app.get("/api/listflair", async (req, res) => {
@@ -187,8 +451,71 @@ app.get("/api/listflair", async (req, res) => {
   res.json(payload);
 });
 
-app.use(express.json());
+app.post("/api/user", async (req, res) => {
+  const { username } = req.body || {};
+  if (typeof username !== "string" || !username.trim()) {
+    return res.status(400).json({ error: "username is required and must be a non-empty string" });
+  }
 
+  try {
+    const success = await setUsername(req.userContext.key, username);
+    if (!success) {
+      return res.status(409).json({ error: "Username is already taken" });
+    }
+    const updated = await getUsername(req.userContext.key);
+    res.json({ username: updated });
+  } catch (error) {
+    console.error("Failed to set username:", error);
+    res.status(500).json({ error: "Could not set username" });
+  }
+});
+
+app.get("/api/user", async (req, res) => {
+  if (!req.userContext.isAuthenticated) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const username = await getUsername(req.userContext.key);
+  res.json({ username });
+});
+app.post("/api/dev/login", async (req, res) => {
+  if (!isLocalHost("localhost")) {
+    return res.status(403).json({ error: "Dev endpoint only available on localhost" });
+  }
+
+  const { username, displayName } = req.body || {};
+  if (typeof username !== "string" || !username.trim()) {
+    return res.status(400).json({ error: "username is required" });
+  }
+  if (typeof displayName !== "string" || !displayName.trim()) {
+    return res.status(400).json({ error: "displayName is required" });
+  }
+
+  try {
+    const devKey = `dev-local:${username.trim().toLowerCase().slice(0, 50)}`;
+    const success = await setUsername(devKey, username.trim());
+    if (!success) {
+      return res.status(409).json({ error: "Username already taken" });
+    }
+
+    const principal = {
+      auth_typ: "local-dev",
+      userId: devKey,
+      userDetails: displayName.trim(),
+      claims: []
+    };
+
+    res.json({
+      message: "Dev user created for local testing",
+      devKey,
+      username: username.trim(),
+      displayName: displayName.trim(),
+      principal: Buffer.from(JSON.stringify(principal)).toString("base64")
+    });
+  } catch (error) {
+    console.error("Dev login error:", error);
+    res.status(500).json({ error: "Could not create dev user" });
+  }
+});
 app.post("/api/entries", async (req, res) => {
   const { name, category } = req.body || {};
   if (!name || !category || typeof name !== "string" || typeof category !== "string") {
