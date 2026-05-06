@@ -2,6 +2,10 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# Local development OAuth credentials (kept out of production config).
+$env:GITHUB_CLIENT_ID = "Ov23liTI1dMPWzifsk7i"
+$env:GITHUB_CLIENT_SECRET = "2831b7a8fccaa16696bd4a13d56dd104a9544846"
+
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw "npm was not found. Install Node.js and try again."
 }
