@@ -13,7 +13,12 @@ const {
   setEntryImageError,
   reorderEntries,
   getUsername,
-  setUsername
+  setUsername,
+  listFavoriteImages,
+  isFavoriteImage,
+  addFavoriteImage,
+  removeFavoriteImage,
+  removeAllFavoriteImagesForEntry
 } = require("./services/listflairService");
 const {
   findAndCacheImageForEntry,
@@ -65,6 +70,59 @@ function getRequestedImageIndex(entry, forceRefresh = false) {
   return forceRefresh ? Math.max(0, currentIndex + 1) : Math.max(0, currentIndex);
 }
 
+async function removeImageIfNotFavorited(ownerKey, entryId, imageUrl) {
+  if (!imageUrl) {
+    return;
+  }
+
+  const keepImage = await isFavoriteImage(ownerKey, entryId, imageUrl);
+  if (!keepImage) {
+    await removeCachedImage(imageUrl);
+  }
+}
+
+async function setEntryImageAndCleanupPrevious(ownerKey, entryId, nextImage) {
+  const currentEntry = await getEntry(ownerKey, entryId);
+  if (!currentEntry) {
+    return null;
+  }
+
+  const previousImageUrl = currentEntry.imageUrl;
+  await setEntryImageReady(
+    ownerKey,
+    entryId,
+    nextImage.imageUrl,
+    nextImage.imageSource,
+    nextImage.imageQuery,
+    nextImage.imageResultIndex
+  );
+
+  if (previousImageUrl && previousImageUrl !== nextImage.imageUrl) {
+    await removeImageIfNotFavorited(ownerKey, entryId, previousImageUrl);
+  }
+
+  return getEntry(ownerKey, entryId);
+}
+
+async function getEntryViewerImages(ownerKey, entryId) {
+  const entry = await getEntry(ownerKey, entryId);
+  if (!entry) {
+    return null;
+  }
+
+  const favorites = await listFavoriteImages(ownerKey, entryId);
+  const favoritesWithFlags = favorites.map((image) => ({
+    ...image,
+    isFavorite: true,
+    isCurrent: Boolean(entry.imageUrl && image.imageUrl === entry.imageUrl)
+  }));
+
+  return {
+    entry,
+    images: favoritesWithFlags
+  };
+}
+
 function startImageLookup(ownerKey, entryId) {
   const lookupKey = `${ownerKey}:${entryId}`;
   if (pendingImageLookups.has(lookupKey)) {
@@ -78,20 +136,8 @@ function startImageLookup(ownerKey, entryId) {
         return;
       }
 
-      const previousImageUrl = entry.imageUrl;
       const image = await findAndCacheImageForEntry(entry, getRequestedImageIndex(entry));
-      await setEntryImageReady(
-        ownerKey,
-        entryId,
-        image.imageUrl,
-        image.imageSource,
-        image.imageQuery,
-        image.imageResultIndex
-      );
-
-      if (previousImageUrl && previousImageUrl !== image.imageUrl) {
-        await removeCachedImage(previousImageUrl);
-      }
+      await setEntryImageAndCleanupPrevious(ownerKey, entryId, image);
     } catch (error) {
       await setEntryImageError(ownerKey, entryId, error.message);
     } finally {
@@ -551,8 +597,16 @@ app.delete("/api/entries/:id", async (req, res) => {
     return res.status(404).json({ error: "Entry not found" });
   }
 
+  const favorites = await listFavoriteImages(req.userContext.key, id);
+  await removeAllFavoriteImagesForEntry(req.userContext.key, id);
+
   if (existingEntry?.imageUrl) {
     await removeCachedImage(existingEntry.imageUrl);
+  }
+  for (const image of favorites) {
+    if (image.imageUrl && image.imageUrl !== existingEntry?.imageUrl) {
+      await removeCachedImage(image.imageUrl);
+    }
   }
 
   res.json({ ok: true, deleted: id });
@@ -574,10 +628,67 @@ app.patch("/api/entries/:id", async (req, res) => {
   }
 
   if (existingEntry?.imageUrl) {
-    await removeCachedImage(existingEntry.imageUrl);
+    await removeImageIfNotFavorited(req.userContext.key, id, existingEntry.imageUrl);
   }
 
   res.json(updated);
+});
+
+app.get("/api/entries/:id/favorites", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  const viewerData = await getEntryViewerImages(req.userContext.key, id);
+  if (!viewerData) {
+    return res.status(404).json({ error: "Entry not found" });
+  }
+
+  return res.json({
+    entryId: id,
+    currentImageUrl: viewerData.entry.imageUrl || null,
+    images: viewerData.images
+  });
+});
+
+app.post("/api/entries/:id/favorites", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  const { imageUrl, favorite, imageSource, imageQuery } = req.body || {};
+  if (!imageUrl || typeof imageUrl !== "string") {
+    return res.status(400).json({ error: "imageUrl is required" });
+  }
+
+  const entry = await getEntry(req.userContext.key, id);
+  if (!entry) {
+    return res.status(404).json({ error: "Entry not found" });
+  }
+
+  if (favorite) {
+    await addFavoriteImage(
+      req.userContext.key,
+      id,
+      imageUrl,
+      typeof imageSource === "string" ? imageSource : null,
+      typeof imageQuery === "string" ? imageQuery.slice(0, 500) : null
+    );
+  } else {
+    const removed = await removeFavoriteImage(req.userContext.key, id, imageUrl);
+    if (removed && entry.imageUrl !== imageUrl) {
+      await removeCachedImage(imageUrl);
+    }
+  }
+
+  const viewerData = await getEntryViewerImages(req.userContext.key, id);
+  return res.json({
+    entryId: id,
+    currentImageUrl: viewerData.entry.imageUrl || null,
+    images: viewerData.images
+  });
 });
 
 app.get("/api/entries/:id/image/search", async (req, res) => {
@@ -678,7 +789,6 @@ app.post("/api/entries/:id/image/pick", async (req, res) => {
     return res.status(404).json({ error: "Entry not found" });
   }
 
-  const previousImageUrl = entry.imageUrl;
   try {
     const cached = await cacheSelectedImage(entry, {
       fetchUrl,
@@ -687,11 +797,12 @@ app.post("/api/entries/:id/image/pick", async (req, res) => {
       query: typeof query === "string" ? query.slice(0, 500) : ""
     });
 
-    await setEntryImageReady(req.userContext.key, id, cached.imageUrl, cached.imageSource, cached.imageQuery, 0);
-
-    if (previousImageUrl && previousImageUrl !== cached.imageUrl) {
-      await removeCachedImage(previousImageUrl);
-    }
+    await setEntryImageAndCleanupPrevious(req.userContext.key, id, {
+      imageUrl: cached.imageUrl,
+      imageSource: cached.imageSource,
+      imageQuery: cached.imageQuery,
+      imageResultIndex: 0
+    });
 
     const updatedEntry = await getEntry(req.userContext.key, id);
     return sendImagePayload(res, updatedEntry);

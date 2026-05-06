@@ -1,4 +1,4 @@
-const CACHE_NAME = "listflair-shell-v2";
+const CACHE_NAME = "listflair-shell-v4";
 const SHELL_ASSETS = [
   "/",
   "/styles.css",

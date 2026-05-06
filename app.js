@@ -6,6 +6,9 @@ const detailModalTitle = document.getElementById("detailModalTitle");
 const detailModalRank = document.getElementById("detailModalRank");
 const detailModalCategory = document.getElementById("detailModalCategory");
 const detailModalImage = document.getElementById("detailModalImage");
+const detailModalFavoriteBtn = document.getElementById("detailModalFavoriteBtn");
+const detailModalPrevImageBtn = document.getElementById("detailModalPrevImageBtn");
+const detailModalNextImageBtn = document.getElementById("detailModalNextImageBtn");
 const detailModalTitleInput = document.getElementById("detailModalTitleInput");
 const detailModalCategoryInput = document.getElementById("detailModalCategoryInput");
 const modalRefreshBtn = document.getElementById("modalRefreshBtn");
@@ -31,6 +34,12 @@ const modalState = {
   cell: null,
   lastFocus: null,
   isSaving: false
+};
+const modalViewerState = {
+  entryId: null,
+  images: [],
+  activeIndex: 0,
+  isTogglingFavorite: false
 };
 const reorderState = {
   draggingCell: null,
@@ -77,6 +86,22 @@ function getSearchButtonMarkup() {
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="11" cy="11" r="8"/>
       <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+  `;
+}
+
+function getHeartButtonMarkup(isFilled = false) {
+  if (isFilled) {
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 21s-6.7-4.35-9.33-8.1C.13 9.34 1.37 5.1 4.9 3.77c2.13-.8 4.44-.16 5.9 1.61 1.46-1.77 3.77-2.41 5.9-1.61 3.53 1.33 4.77 5.57 2.23 9.13C18.7 16.65 12 21 12 21Z"/>
+      </svg>
+    `;
+  }
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 21s-6.7-4.35-9.33-8.1C.13 9.34 1.37 5.1 4.9 3.77c2.13-.8 4.44-.16 5.9 1.61 1.46-1.77 3.77-2.41 5.9-1.61 3.53 1.33 4.77 5.57 2.23 9.13C18.7 16.65 12 21 12 21Z"/>
     </svg>
   `;
 }
@@ -149,6 +174,209 @@ function getCellImageSrc(cell) {
   return imageSrc.includes("image-loading.svg") ? LOADING_IMAGE_SRC : imageSrc;
 }
 
+function getActiveViewerImage() {
+  if (!modalViewerState.images.length) {
+    return null;
+  }
+
+  return modalViewerState.images[modalViewerState.activeIndex] || null;
+}
+
+function getModalDisplayedImageUrl() {
+  const imageSrc = detailModalImage?.getAttribute("src") || LOADING_IMAGE_SRC;
+  return imageSrc.includes("image-loading.svg") ? LOADING_IMAGE_SRC : imageSrc;
+}
+
+function updateModalViewerControls() {
+  const activeImage = getActiveViewerImage();
+  const displayedImageUrl = getModalDisplayedImageUrl();
+  const canNavigate = modalViewerState.images.length > 1;
+
+  if (detailModalPrevImageBtn) {
+    detailModalPrevImageBtn.disabled = !canNavigate;
+    detailModalPrevImageBtn.hidden = !canNavigate;
+  }
+  if (detailModalNextImageBtn) {
+    detailModalNextImageBtn.disabled = !canNavigate;
+    detailModalNextImageBtn.hidden = !canNavigate;
+  }
+
+  if (detailModalFavoriteBtn) {
+    const canToggleFavorite = Boolean(
+      modalState.cell && (activeImage?.imageUrl || (displayedImageUrl && displayedImageUrl !== LOADING_IMAGE_SRC))
+    );
+    const displayedImage =
+      modalViewerState.images.find((image) => image.imageUrl === displayedImageUrl) ||
+      activeImage ||
+      null;
+    const isFavorite = Boolean(displayedImage?.isFavorite);
+    detailModalFavoriteBtn.disabled = !canToggleFavorite || modalViewerState.isTogglingFavorite;
+    detailModalFavoriteBtn.classList.toggle("detail-modal__favorite--active", isFavorite);
+    detailModalFavoriteBtn.innerHTML = getHeartButtonMarkup(isFavorite);
+    detailModalFavoriteBtn.setAttribute("aria-label", isFavorite ? "Remove favorite" : "Save as favorite");
+    detailModalFavoriteBtn.setAttribute("title", isFavorite ? "Remove favorite" : "Save as favorite");
+  }
+}
+
+function setModalImageFromViewerOrCell(cell = modalState.cell) {
+  if (!detailModalImage || !cell) {
+    return;
+  }
+
+  const activeImage = getActiveViewerImage();
+  const fallbackSrc = getCellImageSrc(cell);
+  const imageSrc = activeImage?.imageUrl || fallbackSrc;
+  const title = cell.querySelector(".title")?.textContent || "item";
+
+  detailModalImage.src = imageSrc;
+  detailModalImage.alt = imageSrc === LOADING_IMAGE_SRC ? `Loading image for ${title}` : `Image for ${title}`;
+  updateModalViewerControls();
+}
+
+async function loadModalViewerImages(cell = modalState.cell, preferredImageUrl = null) {
+  if (!cell || !modalSearchPanel) {
+    return;
+  }
+
+  const id = Number(cell.dataset.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/entries/${id}/favorites`, {
+      headers: { Accept: "application/json" }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Favorite image load failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const currentCellImage = getCellImageSrc(cell);
+    const images = Array.isArray(payload.images) ? payload.images.slice() : [];
+
+    const currentExists = images.some((image) => image.imageUrl === payload.currentImageUrl);
+    if (payload.currentImageUrl && !currentExists) {
+      images.unshift({
+        imageUrl: payload.currentImageUrl,
+        imageSource: null,
+        imageQuery: null,
+        isFavorite: false,
+        isCurrent: true
+      });
+    }
+
+    const fallbackExists = currentCellImage && images.some((image) => image.imageUrl === currentCellImage);
+    if (currentCellImage && currentCellImage !== LOADING_IMAGE_SRC && !fallbackExists) {
+      images.unshift({
+        imageUrl: currentCellImage,
+        imageSource: null,
+        imageQuery: null,
+        isFavorite: false,
+        isCurrent: payload.currentImageUrl === currentCellImage
+      });
+    }
+
+    modalViewerState.entryId = id;
+    modalViewerState.images = images;
+
+    const preferred = preferredImageUrl && preferredImageUrl !== LOADING_IMAGE_SRC ? preferredImageUrl : null;
+    const preferredIndex = preferred ? images.findIndex((image) => image.imageUrl === preferred) : -1;
+    modalViewerState.activeIndex = preferredIndex >= 0 ? preferredIndex : 0;
+
+    setModalImageFromViewerOrCell(cell);
+  } catch (error) {
+    console.error("Could not load favorite images:", error);
+    modalViewerState.entryId = id;
+    modalViewerState.images = [];
+    modalViewerState.activeIndex = 0;
+    setModalImageFromViewerOrCell(cell);
+  }
+}
+
+async function toggleActiveImageFavorite() {
+  const cell = modalState.cell;
+  const activeImage = getActiveViewerImage();
+  const displayedImageUrl = getModalDisplayedImageUrl();
+  const fallbackImage =
+    displayedImageUrl && displayedImageUrl !== LOADING_IMAGE_SRC
+      ? {
+          imageUrl: displayedImageUrl,
+          imageSource: null,
+          imageQuery: null,
+          isFavorite: Boolean(
+            modalViewerState.images.find((image) => image.imageUrl === displayedImageUrl)?.isFavorite
+          )
+        }
+      : null;
+  const targetImage = activeImage?.imageUrl ? activeImage : fallbackImage;
+
+  if (modalViewerState.isTogglingFavorite) {
+    return;
+  }
+
+  if (!cell || !targetImage?.imageUrl) {
+    statusMsg.textContent = "Load an image first, then save it with the heart.";
+    return;
+  }
+
+  modalViewerState.isTogglingFavorite = true;
+  updateModalViewerControls();
+
+  const nextFavoriteValue = !targetImage.isFavorite;
+  const id = Number(cell.dataset.id);
+  try {
+    const response = await fetch(`/api/entries/${id}/favorites`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        imageUrl: targetImage.imageUrl,
+        favorite: nextFavoriteValue,
+        imageSource: targetImage.imageSource || null,
+        imageQuery: targetImage.imageQuery || null
+      })
+    });
+
+    if (!response.ok) {
+      let message = `Favorite toggle failed: ${response.status}`;
+      try {
+        const errorPayload = await response.json();
+        if (errorPayload?.error) {
+          message = String(errorPayload.error);
+        }
+      } catch (_error) {
+        // Ignore JSON parse failures for non-JSON responses.
+      }
+      throw new Error(message);
+    }
+
+    const preferredUrl = targetImage.imageUrl;
+    await loadModalViewerImages(cell, preferredUrl);
+    statusMsg.textContent = nextFavoriteValue
+      ? "Saved image to this tile."
+      : "Removed image from saved list.";
+  } catch (error) {
+    console.error("Could not update favorite image:", error);
+    statusMsg.textContent = error?.message || "Could not update saved image.";
+  } finally {
+    modalViewerState.isTogglingFavorite = false;
+    updateModalViewerControls();
+  }
+}
+
+function navigateModalViewer(direction) {
+  if (modalViewerState.images.length <= 1) {
+    return;
+  }
+
+  const offset = direction === "prev" ? -1 : 1;
+  const total = modalViewerState.images.length;
+  modalViewerState.activeIndex = (modalViewerState.activeIndex + offset + total) % total;
+  setModalImageFromViewerOrCell(modalState.cell);
+}
+
 function syncEditModalFromCell(cell = modalState.cell) {
   if (!cell || !editModal || editModal.hidden) {
     return;
@@ -159,13 +387,11 @@ function syncEditModalFromCell(cell = modalState.cell) {
   const rank = cell.querySelector(".rank")?.textContent?.trim() || "";
   const isImageMode = cell.classList.contains("cell--image-mode");
   const isImageLoading = cell.classList.contains("cell--image-loading");
-  const imageSrc = getCellImageSrc(cell);
 
   detailModalTitle.textContent = title;
   detailModalRank.textContent = rank;
   detailModalCategory.textContent = category;
-  detailModalImage.src = imageSrc;
-  detailModalImage.alt = imageSrc === LOADING_IMAGE_SRC ? `Loading image for ${title}` : `Image for ${title}`;
+  setModalImageFromViewerOrCell(cell);
   if (detailModalTitleInput && document.activeElement !== detailModalTitleInput) {
     detailModalTitleInput.value = title;
   }
@@ -305,6 +531,7 @@ function openEditModal(cell) {
     }
 
   syncEditModalFromCell(cell);
+  loadModalViewerImages(cell, getCellImageSrc(cell));
   if (detailModalTitleInput) {
     detailModalTitleInput.focus();
     detailModalTitleInput.setSelectionRange(0, detailModalTitleInput.value.length);
@@ -331,6 +558,11 @@ function closeEditModal() {
   const focusTarget = modalState.lastFocus;
   modalState.cell = null;
   modalState.lastFocus = null;
+  modalViewerState.entryId = null;
+  modalViewerState.images = [];
+  modalViewerState.activeIndex = 0;
+  modalViewerState.isTogglingFavorite = false;
+  updateModalViewerControls();
 
   if (focusTarget && document.contains(focusTarget)) {
     focusTarget.focus();
@@ -398,6 +630,9 @@ async function pollForImage(cell) {
           if (cell.classList.contains("cell--image-mode")) {
             showImageMode(cell, payload.imageUrl);
           }
+          if (modalState.cell === cell) {
+            loadModalViewerImages(cell, payload.imageUrl);
+          }
           statusMsg.textContent = "";
           return;
         }
@@ -452,6 +687,9 @@ async function ensureEntryImage(cell, { forceRefresh = false } = {}) {
     const payload = await response.json();
     if (payload.status === "ready" && payload.imageUrl) {
       showImageMode(cell, payload.imageUrl);
+      if (modalState.cell === cell) {
+        loadModalViewerImages(cell, payload.imageUrl);
+      }
       setRefreshButtonLoading(cell, false);
       statusMsg.textContent = "";
       return;
@@ -619,6 +857,9 @@ async function handlePickImage(btn) {
     const payload = await response.json();
     if (payload.imageUrl) {
       showImageMode(cell, payload.imageUrl);
+      if (modalState.cell === cell) {
+        loadModalViewerImages(cell, payload.imageUrl);
+      }
     }
     statusMsg.textContent = "";
   } catch (err) {
@@ -1002,6 +1243,25 @@ if (modalDeleteBtn) {
   modalDeleteBtn.innerHTML = getDeleteButtonMarkup();
   modalDeleteBtn.addEventListener("click", async () => {
     await handleDeleteAction(modalState.cell, modalDeleteBtn);
+  });
+}
+
+if (detailModalFavoriteBtn) {
+  detailModalFavoriteBtn.innerHTML = getHeartButtonMarkup(false);
+  detailModalFavoriteBtn.addEventListener("click", async () => {
+    await toggleActiveImageFavorite();
+  });
+}
+
+if (detailModalPrevImageBtn) {
+  detailModalPrevImageBtn.addEventListener("click", () => {
+    navigateModalViewer("prev");
+  });
+}
+
+if (detailModalNextImageBtn) {
+  detailModalNextImageBtn.addEventListener("click", () => {
+    navigateModalViewer("next");
   });
 }
 

@@ -858,6 +858,67 @@ body {
     linear-gradient(160deg, #131217, #09090b);
 }
 
+.detail-modal__viewer-nav,
+.detail-modal__favorite {
+  position: absolute;
+  z-index: 3;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(183, 147, 84, 0.5);
+  background: rgba(10, 10, 12, 0.65);
+  color: #e5c98f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, color 140ms ease;
+}
+
+.detail-modal__viewer-nav:hover,
+.detail-modal__favorite:hover {
+  background: rgba(27, 24, 18, 0.85);
+  border-color: rgba(215, 181, 124, 0.9);
+  transform: translateY(-1px);
+}
+
+.detail-modal__viewer-nav:disabled,
+.detail-modal__favorite:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.detail-modal__viewer-nav svg,
+.detail-modal__favorite svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.detail-modal__viewer-nav--prev {
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.detail-modal__viewer-nav--next {
+  right: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.detail-modal__favorite {
+  top: 0.7rem;
+  right: 0.7rem;
+}
+
+.detail-modal__favorite--active {
+  color: #f09b8b;
+  border-color: rgba(240, 155, 139, 0.85);
+  background: rgba(85, 24, 24, 0.42);
+}
+
 .detail-modal__media::after {
   content: "";
   position: absolute;

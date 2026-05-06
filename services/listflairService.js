@@ -95,6 +95,21 @@ async function initializeAzureSqlDatabase() {
 
     IF COL_LENGTH('dbo.entries', 'owner_key') IS NULL
       ALTER TABLE dbo.entries ADD owner_key NVARCHAR(200) NOT NULL CONSTRAINT DF_entries_owner_key DEFAULT 'local-dev';
+
+    IF OBJECT_ID(N'dbo.entry_favorite_images', N'U') IS NULL
+    BEGIN
+      CREATE TABLE dbo.entry_favorite_images (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        owner_key NVARCHAR(200) NOT NULL,
+        entry_id INT NOT NULL,
+        image_url NVARCHAR(2048) NOT NULL,
+        image_source NVARCHAR(2048) NULL,
+        image_query NVARCHAR(500) NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_entry_favorite_images UNIQUE (owner_key, entry_id, image_url)
+      );
+      CREATE INDEX IX_entry_favorite_images_owner_entry ON dbo.entry_favorite_images (owner_key, entry_id, created_at, id);
+    END;
   `);
 
   const orderedRows = await pool.request().query(`
@@ -148,6 +163,17 @@ function initializeSqliteDatabase() {
       name TEXT NOT NULL,
       category TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS entry_favorite_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_key TEXT NOT NULL,
+      entry_id INTEGER NOT NULL,
+      image_url TEXT NOT NULL,
+      image_source TEXT,
+      image_query TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(owner_key, entry_id, image_url)
     )
   `);
 
@@ -186,6 +212,10 @@ function initializeSqliteDatabase() {
   if (!columns.has("owner_key")) {
     database.exec("ALTER TABLE entries ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'local-dev'");
   }
+
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_entry_favorite_images_owner_entry ON entry_favorite_images(owner_key, entry_id, created_at, id)"
+  );
 
   const rows = database
     .prepare(
@@ -668,6 +698,171 @@ async function setUsername(ownerKey, username) {
   }
 }
 
+async function listFavoriteImages(ownerKey, entryId) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    const result = await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .input("entryId", sql.Int, entryId)
+      .query(`
+        SELECT
+          image_url AS imageUrl,
+          image_source AS imageSource,
+          image_query AS imageQuery,
+          created_at AS createdAt
+        FROM dbo.entry_favorite_images
+        WHERE owner_key = @ownerKey AND entry_id = @entryId
+        ORDER BY created_at ASC, id ASC
+      `);
+    return result.recordset;
+  }
+
+  const database = getSqliteDatabase();
+  return database
+    .prepare(
+      `
+      SELECT
+        image_url AS imageUrl,
+        image_source AS imageSource,
+        image_query AS imageQuery,
+        created_at AS createdAt
+      FROM entry_favorite_images
+      WHERE owner_key = ? AND entry_id = ?
+      ORDER BY created_at ASC, id ASC
+    `
+    )
+    .all(scopedOwnerKey, entryId);
+}
+
+async function isFavoriteImage(ownerKey, entryId, imageUrl) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  if (!imageUrl) {
+    return false;
+  }
+
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    const result = await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .input("entryId", sql.Int, entryId)
+      .input("imageUrl", sql.NVarChar(2048), imageUrl)
+      .query(`
+        SELECT TOP (1) 1 AS found
+        FROM dbo.entry_favorite_images
+        WHERE owner_key = @ownerKey AND entry_id = @entryId AND image_url = @imageUrl
+      `);
+    return Boolean(result.recordset[0]?.found);
+  }
+
+  const database = getSqliteDatabase();
+  const row = database
+    .prepare(
+      "SELECT 1 AS found FROM entry_favorite_images WHERE owner_key = ? AND entry_id = ? AND image_url = ? LIMIT 1"
+    )
+    .get(scopedOwnerKey, entryId, imageUrl);
+  return Boolean(row?.found);
+}
+
+async function addFavoriteImage(ownerKey, entryId, imageUrl, imageSource = null, imageQuery = null) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  if (!imageUrl) {
+    return false;
+  }
+
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .input("entryId", sql.Int, entryId)
+      .input("imageUrl", sql.NVarChar(2048), imageUrl)
+      .input("imageSource", sql.NVarChar(2048), imageSource)
+      .input("imageQuery", sql.NVarChar(500), imageQuery)
+      .query(`
+        MERGE dbo.entry_favorite_images AS target
+        USING (
+          SELECT
+            @ownerKey AS owner_key,
+            @entryId AS entry_id,
+            @imageUrl AS image_url,
+            @imageSource AS image_source,
+            @imageQuery AS image_query
+        ) AS source
+        ON target.owner_key = source.owner_key
+          AND target.entry_id = source.entry_id
+          AND target.image_url = source.image_url
+        WHEN MATCHED THEN
+          UPDATE SET image_source = source.image_source, image_query = source.image_query
+        WHEN NOT MATCHED THEN
+          INSERT (owner_key, entry_id, image_url, image_source, image_query)
+          VALUES (source.owner_key, source.entry_id, source.image_url, source.image_source, source.image_query);
+      `);
+    return true;
+  }
+
+  const database = getSqliteDatabase();
+  database
+    .prepare(
+      `
+      INSERT INTO entry_favorite_images (owner_key, entry_id, image_url, image_source, image_query)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(owner_key, entry_id, image_url)
+      DO UPDATE SET
+        image_source = excluded.image_source,
+        image_query = excluded.image_query
+    `
+    )
+    .run(scopedOwnerKey, entryId, imageUrl, imageSource, imageQuery);
+
+  return true;
+}
+
+async function removeFavoriteImage(ownerKey, entryId, imageUrl) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  if (!imageUrl) {
+    return false;
+  }
+
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    const result = await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .input("entryId", sql.Int, entryId)
+      .input("imageUrl", sql.NVarChar(2048), imageUrl)
+      .query(`
+        DELETE FROM dbo.entry_favorite_images
+        WHERE owner_key = @ownerKey AND entry_id = @entryId AND image_url = @imageUrl
+      `);
+    return result.rowsAffected[0] > 0;
+  }
+
+  const database = getSqliteDatabase();
+  const result = database
+    .prepare("DELETE FROM entry_favorite_images WHERE owner_key = ? AND entry_id = ? AND image_url = ?")
+    .run(scopedOwnerKey, entryId, imageUrl);
+  return result.changes > 0;
+}
+
+async function removeAllFavoriteImagesForEntry(ownerKey, entryId) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .input("entryId", sql.Int, entryId)
+      .query("DELETE FROM dbo.entry_favorite_images WHERE owner_key = @ownerKey AND entry_id = @entryId");
+    return;
+  }
+
+  const database = getSqliteDatabase();
+  database.prepare("DELETE FROM entry_favorite_images WHERE owner_key = ? AND entry_id = ?").run(scopedOwnerKey, entryId);
+}
+
 module.exports = {
   initializeDatabase,
   getListflair,
@@ -680,5 +875,10 @@ module.exports = {
   setEntryImageError,
   reorderEntries,
   getUsername,
-  setUsername
+  setUsername,
+  listFavoriteImages,
+  isFavoriteImage,
+  addFavoriteImage,
+  removeFavoriteImage,
+  removeAllFavoriteImagesForEntry
 };
