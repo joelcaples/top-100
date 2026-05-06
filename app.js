@@ -157,7 +157,7 @@ function setRefreshButtonLoading(cell, isLoading) {
 
 function getCellMarkup(item, rank) {
   return `
-    <span class="rank">#${rank}</span>
+    <span class="rank">${rank}.</span>
     <p class="title">${item.name}</p>
     <span class="tag">${item.category}</span>
     <div class="cell-content">
@@ -375,6 +375,12 @@ function navigateModalViewer(direction) {
   const total = modalViewerState.images.length;
   modalViewerState.activeIndex = (modalViewerState.activeIndex + offset + total) % total;
   setModalImageFromViewerOrCell(modalState.cell);
+  
+  // Update cell's main image to match the modal viewer image
+  const activeImage = getActiveViewerImage();
+  if (activeImage && modalState.cell) {
+    showImageMode(modalState.cell, activeImage.imageUrl);
+  }
 }
 
 function syncEditModalFromCell(cell = modalState.cell) {

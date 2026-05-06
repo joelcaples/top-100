@@ -661,7 +661,6 @@ body {
   object-fit: contain;
 }
 
-.cell--image-mode .rank,
 .cell--image-mode .title,
 .cell--image-mode .tag {
   visibility: hidden;
@@ -755,10 +754,14 @@ body {
 }
 
 .rank {
+  position: absolute;
+  bottom: 0.3rem;
+  right: 0.3rem;
   font-size: 0.72rem;
   font-weight: 700;
   color: #c9ab72;
   letter-spacing: 0.08em;
+  z-index: 2;
 }
 
 .title {
