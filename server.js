@@ -813,7 +813,19 @@ app.post("/api/entries/:id/image/pick", async (req, res) => {
 });
 
 async function startServer() {
-  await initializeDatabase();
+  try {
+    await initializeDatabase();
+  } catch (error) {
+    if (error.message && error.message.includes('SQLite database unavailable')) {
+      console.error(`\n❌ ${error.message}`);
+      console.error('\nTo use local SQLite development:');
+      console.error('  1. Downgrade Node.js to v25 or earlier');
+      console.error('  OR');
+      console.error('  2. Set up Azure SQL and provide AZURE_SQL_CONNECTION_STRING\n');
+      process.exit(1);
+    }
+    throw error;
+  }
 
   const databaseMode = USE_AZURE_SQL ? "Azure SQL" : "SQLite (local)";
   const imageCacheMode = USE_BLOB_STORAGE

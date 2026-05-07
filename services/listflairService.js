@@ -27,10 +27,18 @@ function getSqliteDatabase() {
     return sqliteDb;
   }
 
-  const Database = require("better-sqlite3");
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  sqliteDb = new Database(DB_PATH);
-  return sqliteDb;
+  try {
+    const Database = require("better-sqlite3");
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    sqliteDb = new Database(DB_PATH);
+    return sqliteDb;
+  } catch (error) {
+    if (error.code === 'MODULE_NOT_FOUND') {
+      console.warn('better-sqlite3 not available. Please use AZURE_SQL_CONNECTION_STRING for database access.');
+      throw new Error('SQLite database unavailable. Set AZURE_SQL_CONNECTION_STRING environment variable to use Azure SQL instead.');
+    }
+    throw error;
+  }
 }
 
 async function getAzureSqlPool() {
