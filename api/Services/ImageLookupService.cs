@@ -380,7 +380,11 @@ public class ImageLookupService : IImageLookupService
         // Step 2: Fetch images
         var imagesUrl = new UriBuilder("https://duckduckgo.com/i.js");
         imagesUrl.Query = $"q={Uri.EscapeDataString(query)}&vqd={Uri.EscapeDataString(vqd)}&p=1&s=0&l=us-en&f=,,,,,";
-        var imgResp = await client.GetAsync(imagesUrl.Uri);
+        
+        var imageRequest = new HttpRequestMessage(HttpMethod.Get, imagesUrl.Uri);
+        imageRequest.Headers.Add("Referer", $"https://duckduckgo.com/?q={Uri.EscapeDataString(query)}&iax=images&ia=images");
+        
+        var imgResp = await client.SendAsync(imageRequest);
         if (!imgResp.IsSuccessStatusCode)
             throw new InvalidOperationException($"Image search failed ({(int)imgResp.StatusCode})");
 
