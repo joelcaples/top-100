@@ -57,6 +57,7 @@
             <span class="button-deco__label">SIGN IN FOR YOUR BOARD</span>
           </a>
           <button id="accountMenuBtn" class="account-icon-btn" type="button" hidden aria-label="Account menu" aria-expanded="false" aria-controls="accountMenu">
+            <img id="accountMenuAvatar" class="account-icon-btn__avatar" src="" alt="" hidden />
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
@@ -83,6 +84,18 @@
               <div class="account-menu__section">
                 <div class="account-menu__label">OAuth Provider</div>
                 <div id="accountProvider" class="account-menu__value">—</div>
+              </div>
+              <div class="account-menu__section">
+                <div class="account-menu__label">Avatar</div>
+                <div class="account-avatar-settings">
+                  <img id="accountAvatarPreview" class="account-avatar-settings__preview" src="" alt="Avatar preview" />
+                  <div class="account-avatar-settings__controls">
+                    <label class="account-menu__action account-menu__action--file" for="accountAvatarInput">
+                      <span>Choose Avatar</span>
+                    </label>
+                    <input id="accountAvatarInput" type="file" accept="image/*" hidden />
+                  </div>
+                </div>
               </div>
               <div class="account-menu__divider"></div>
               <button id="changeUsernameBtn" class="account-menu__action" type="button">

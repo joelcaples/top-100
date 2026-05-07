@@ -265,7 +265,7 @@ body {
   width: 2.2rem;
   height: 2.2rem;
   border: 1px solid var(--gold);
-  border-radius: 3px;
+  border-radius: 999px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 55%), linear-gradient(130deg, #3a2e18, #17120d 78%);
   color: #f3e6c8;
   cursor: pointer;
@@ -275,6 +275,7 @@ body {
   top: 1rem;
   right: 1rem;
   z-index: 2;
+  overflow: hidden;
 }
 
 .account-icon-btn:hover {
@@ -290,6 +291,18 @@ body {
 .account-icon-btn svg {
   width: 1.1rem;
   height: 1.1rem;
+}
+
+.account-icon-btn__avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 999px;
+  display: block;
+}
+
+.account-icon-btn--has-avatar svg {
+  display: none;
 }
 
 .account-icon-btn[hidden] {
@@ -390,6 +403,27 @@ body {
   gap: 0.4rem;
 }
 
+.account-avatar-settings {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 0.7rem;
+  align-items: start;
+}
+
+.account-avatar-settings__preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  border: 1px solid rgba(183, 147, 84, 0.32);
+  object-fit: cover;
+  background: rgba(23, 18, 13, 0.9);
+}
+
+.account-avatar-settings__controls {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .account-menu__label {
   font-size: 0.75rem;
   letter-spacing: 0.12em;
@@ -426,6 +460,10 @@ body {
   cursor: pointer;
   transition: all 150ms ease;
   text-decoration: none;
+}
+
+.account-menu__action--file {
+  margin: 0;
 }
 
 .account-menu__action:hover {

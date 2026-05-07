@@ -13,7 +13,9 @@ const {
   setEntryImageError,
   reorderEntries,
   getUsername,
+  getUserProfile,
   setUsername,
+  setUserProfile,
   listFavoriteImages,
   isFavoriteImage,
   addFavoriteImage,
@@ -475,13 +477,16 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/me", async (req, res) => {
 
   const authUrls = getAuthUrls(req);
-  const username = req.userContext.isAuthenticated ? await getUsername(req.userContext.key) : null;
+  const profile = req.userContext.isAuthenticated
+    ? await getUserProfile(req.userContext.key)
+    : { username: null, avatarImage: null };
   const origin = getSiteOrigin(req);
   const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("[::1]");
   const response = {
     isAuthenticated: req.userContext.isAuthenticated,
     displayName: req.userContext.displayName,
-    username,
+    username: profile.username,
+    avatarImage: profile.avatarImage,
     loginUrl: authUrls.loginUrl,
     logoutUrl: authUrls.logoutUrl,
     authProvider: authUrls.provider,
@@ -498,21 +503,47 @@ app.get("/api/listflair", async (req, res) => {
 });
 
 app.post("/api/user", async (req, res) => {
-  const { username } = req.body || {};
-  if (typeof username !== "string" || !username.trim()) {
-    return res.status(400).json({ error: "username is required and must be a non-empty string" });
+  const { username, avatarImage } = req.body || {};
+  const hasUsername = typeof username === "string" && Boolean(username.trim());
+  const avatarProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "avatarImage");
+
+  if (!hasUsername && !avatarProvided) {
+    return res.status(400).json({ error: "At least one of username or avatarImage must be provided" });
+  }
+
+  if (avatarProvided) {
+    if (avatarImage !== null && typeof avatarImage !== "string") {
+      return res.status(400).json({ error: "avatarImage must be a string or null" });
+    }
+
+    if (typeof avatarImage === "string") {
+      const trimmedAvatar = avatarImage.trim();
+      if (!trimmedAvatar.startsWith("data:image/") || trimmedAvatar.length > 300000) {
+        return res.status(400).json({ error: "avatarImage must be a valid data:image URL under 300KB" });
+      }
+    }
   }
 
   try {
-    const success = await setUsername(req.userContext.key, username);
-    if (!success) {
+    const result = await setUserProfile(req.userContext.key, {
+      username: hasUsername ? username : undefined,
+      avatarImage: avatarProvided ? avatarImage : undefined,
+      avatarProvided
+    });
+
+    if (!result.success && result.reason === "username_taken") {
       return res.status(409).json({ error: "Username is already taken" });
     }
-    const updated = await getUsername(req.userContext.key);
-    res.json({ username: updated });
+
+    if (!result.success && result.reason === "username_required") {
+      return res.status(400).json({ error: "Set a username before setting an avatar" });
+    }
+
+    const updated = await getUserProfile(req.userContext.key);
+    res.json({ username: updated.username, avatarImage: updated.avatarImage });
   } catch (error) {
-    console.error("Failed to set username:", error);
-    res.status(500).json({ error: "Could not set username" });
+    console.error("Failed to set user profile:", error);
+    res.status(500).json({ error: "Could not update user profile" });
   }
 });
 
@@ -520,8 +551,8 @@ app.get("/api/user", async (req, res) => {
   if (!req.userContext.isAuthenticated) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  const username = await getUsername(req.userContext.key);
-  res.json({ username });
+  const profile = await getUserProfile(req.userContext.key);
+  res.json({ username: profile.username, avatarImage: profile.avatarImage });
 });
 app.post("/api/dev/login", async (req, res) => {
   if (!isLocalHost("localhost")) {

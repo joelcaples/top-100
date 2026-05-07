@@ -57,10 +57,14 @@ async function initializeAzureSqlDatabase() {
       CREATE TABLE dbo.users (
         owner_key NVARCHAR(200) NOT NULL PRIMARY KEY,
         username NVARCHAR(100) NOT NULL UNIQUE,
+        avatar_image NVARCHAR(MAX) NULL,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
       );
     END;
+
+    IF COL_LENGTH('dbo.users', 'avatar_image') IS NULL
+      ALTER TABLE dbo.users ADD avatar_image NVARCHAR(MAX) NULL;
 
     IF OBJECT_ID(N'dbo.entries', N'U') IS NULL
     BEGIN
@@ -162,6 +166,7 @@ function initializeSqliteDatabase() {
     CREATE TABLE IF NOT EXISTS users (
       owner_key TEXT NOT NULL PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
+      avatar_image TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -219,6 +224,14 @@ function initializeSqliteDatabase() {
 
   if (!columns.has("owner_key")) {
     database.exec("ALTER TABLE entries ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'local-dev'");
+  }
+
+  const userColumns = new Set(
+    database.prepare("PRAGMA table_info(users)").all().map((column) => column.name)
+  );
+
+  if (!userColumns.has("avatar_image")) {
+    database.exec("ALTER TABLE users ADD COLUMN avatar_image TEXT");
   }
 
   database.exec(
@@ -659,6 +672,122 @@ async function getUsername(ownerKey) {
   return database.prepare("SELECT username FROM users WHERE owner_key = ?").get(scopedOwnerKey)?.username || null;
 }
 
+async function getUserProfile(ownerKey) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  if (USE_AZURE_SQL) {
+    const pool = await getAzureSqlPool();
+    const result = await pool
+      .request()
+      .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+      .query("SELECT username, avatar_image AS avatarImage FROM dbo.users WHERE owner_key = @ownerKey");
+    return {
+      username: result.recordset[0]?.username || null,
+      avatarImage: result.recordset[0]?.avatarImage || null
+    };
+  }
+
+  const database = getSqliteDatabase();
+  const row = database
+    .prepare("SELECT username, avatar_image AS avatarImage FROM users WHERE owner_key = ?")
+    .get(scopedOwnerKey);
+  return {
+    username: row?.username || null,
+    avatarImage: row?.avatarImage || null
+  };
+}
+
+async function setUserProfile(ownerKey, { username, avatarImage, avatarProvided = false } = {}) {
+  const scopedOwnerKey = normalizeOwnerKey(ownerKey);
+  const trimmedUsername = typeof username === "string" ? username.trim().slice(0, 100) : "";
+  const hasUsername = Boolean(trimmedUsername);
+  const normalizedAvatar = avatarProvided ? (typeof avatarImage === "string" ? avatarImage : null) : null;
+
+  if (!hasUsername && !avatarProvided) {
+    return { success: false, reason: "no_changes" };
+  }
+
+  if (USE_AZURE_SQL) {
+    try {
+      const pool = await getAzureSqlPool();
+
+      if (hasUsername) {
+        await pool
+          .request()
+          .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+          .input("username", sql.NVarChar(100), trimmedUsername)
+          .input("avatarImage", sql.NVarChar(sql.MAX), avatarProvided ? normalizedAvatar : null)
+          .input("avatarProvided", sql.Bit, avatarProvided ? 1 : 0)
+          .query(`
+            MERGE INTO dbo.users AS target
+            USING (SELECT @ownerKey AS owner_key, @username AS username, @avatarImage AS avatar_image, @avatarProvided AS avatar_provided) AS source
+            ON target.owner_key = source.owner_key
+            WHEN MATCHED THEN
+              UPDATE SET
+                username = source.username,
+                avatar_image = CASE WHEN source.avatar_provided = 1 THEN source.avatar_image ELSE target.avatar_image END,
+                updated_at = SYSUTCDATETIME()
+            WHEN NOT MATCHED THEN
+              INSERT (owner_key, username, avatar_image)
+              VALUES (source.owner_key, source.username, CASE WHEN source.avatar_provided = 1 THEN source.avatar_image ELSE NULL END);
+          `);
+
+        return { success: true };
+      }
+
+      const result = await pool
+        .request()
+        .input("ownerKey", sql.NVarChar(200), scopedOwnerKey)
+        .input("avatarImage", sql.NVarChar(sql.MAX), normalizedAvatar)
+        .query(`
+          UPDATE dbo.users
+          SET avatar_image = @avatarImage,
+              updated_at = SYSUTCDATETIME()
+          WHERE owner_key = @ownerKey
+        `);
+
+      if (Number(result.rowsAffected[0] || 0) === 0) {
+        return { success: false, reason: "username_required" };
+      }
+
+      return { success: true };
+    } catch (error) {
+      if (error.message && error.message.includes("UNIQUE")) {
+        return { success: false, reason: "username_taken" };
+      }
+      throw error;
+    }
+  }
+
+  const database = getSqliteDatabase();
+  try {
+    if (hasUsername) {
+      const stmt = database.prepare(`
+        INSERT INTO users (owner_key, username, avatar_image)
+        VALUES (?, ?, ?)
+        ON CONFLICT(owner_key) DO UPDATE SET
+          username = excluded.username,
+          avatar_image = CASE WHEN ? = 1 THEN excluded.avatar_image ELSE users.avatar_image END,
+          updated_at = CURRENT_TIMESTAMP
+      `);
+      stmt.run(scopedOwnerKey, trimmedUsername, avatarProvided ? normalizedAvatar : null, avatarProvided ? 1 : 0);
+      return { success: true };
+    }
+
+    const result = database
+      .prepare("UPDATE users SET avatar_image = ?, updated_at = CURRENT_TIMESTAMP WHERE owner_key = ?")
+      .run(normalizedAvatar, scopedOwnerKey);
+    if (Number(result.changes || 0) === 0) {
+      return { success: false, reason: "username_required" };
+    }
+    return { success: true };
+  } catch (error) {
+    if (error.message && error.message.includes("UNIQUE")) {
+      return { success: false, reason: "username_taken" };
+    }
+    throw error;
+  }
+}
+
 async function setUsername(ownerKey, username) {
   const scopedOwnerKey = normalizeOwnerKey(ownerKey);
   const trimmedUsername = (typeof username === "string" ? username.trim() : "").slice(0, 100);
@@ -883,7 +1012,9 @@ module.exports = {
   setEntryImageError,
   reorderEntries,
   getUsername,
+  getUserProfile,
   setUsername,
+  setUserProfile,
   listFavoriteImages,
   isFavoriteImage,
   addFavoriteImage,

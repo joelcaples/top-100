@@ -23,9 +23,12 @@ const usernameInput = document.getElementById("usernameInput");
 const usernameSetBtn = document.getElementById("usernameSetBtn");
 const usernameError = document.getElementById("usernameError");
 const accountMenuBtn = document.getElementById("accountMenuBtn");
+const accountMenuAvatar = document.getElementById("accountMenuAvatar");
 const accountMenu = document.getElementById("accountMenu");
 const accountUsername = document.getElementById("accountUsername");
 const accountProvider = document.getElementById("accountProvider");
+const accountAvatarPreview = document.getElementById("accountAvatarPreview");
+const accountAvatarInput = document.getElementById("accountAvatarInput");
 const changeUsernameBtn = document.getElementById("changeUsernameBtn");
 const accountLogoutLink = document.getElementById("accountLogoutLink");
 const LOADING_IMAGE_SRC = "/image-loading.svg";
@@ -46,6 +49,68 @@ const reorderState = {
   isPersisting: false,
   hasQueuedPersist: false
 };
+let pendingAvatarImage = null;
+
+function getDefaultAvatarDataUri() {
+  return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect width='96' height='96' rx='12' fill='%2317120d'/%3E%3Ccircle cx='48' cy='35' r='17' fill='%23b79354'/%3E%3Cpath d='M14 84c5-16 18-25 34-25s29 9 34 25' fill='%23b79354'/%3E%3C/svg%3E";
+}
+
+function setAccountAvatar(avatarImage) {
+  const avatarSrc = typeof avatarImage === "string" && avatarImage.trim() ? avatarImage.trim() : getDefaultAvatarDataUri();
+
+  if (accountMenuAvatar) {
+    accountMenuAvatar.src = avatarSrc;
+    accountMenuAvatar.hidden = false;
+  }
+
+  if (accountMenuBtn) {
+    accountMenuBtn.classList.toggle("account-icon-btn--has-avatar", Boolean(avatarImage));
+  }
+
+  if (accountAvatarPreview) {
+    accountAvatarPreview.src = avatarSrc;
+  }
+}
+
+async function fileToAvatarDataUrl(file) {
+  if (!file) {
+    return null;
+  }
+
+  const rawDataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read selected image"));
+    reader.readAsDataURL(file);
+  });
+
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Selected file is not a valid image"));
+    img.src = rawDataUrl;
+  });
+
+  const maxSize = 160;
+  const canvas = document.createElement("canvas");
+  canvas.width = maxSize;
+  canvas.height = maxSize;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not prepare avatar image");
+  }
+
+  ctx.fillStyle = "#17120d";
+  ctx.fillRect(0, 0, maxSize, maxSize);
+  const scale = Math.max(maxSize / image.width, maxSize / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const offsetX = (maxSize - drawWidth) / 2;
+  const offsetY = (maxSize - drawHeight) / 2;
+  ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
 
 const modalFocusableSelector =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -1484,13 +1549,14 @@ function closeAccountMenu() {
 }
 
 function updateAccountMenuDisplay(userData) {
-  if (accountUsername && userData.username) {
-    accountUsername.textContent = userData.username;
+  if (accountUsername) {
+    accountUsername.textContent = userData.username || "—";
   }
   if (accountProvider) {
     const provider = userData.authProvider || "unknown";
     accountProvider.textContent = provider.charAt(0).toUpperCase() + provider.slice(1);
   }
+  setAccountAvatar(userData.avatarImage || null);
 }
 
 if (accountMenuBtn) {
@@ -1509,6 +1575,57 @@ if (changeUsernameBtn) {
   changeUsernameBtn.addEventListener("click", () => {
     closeAccountMenu();
     showUsernameModal();
+  });
+}
+
+async function saveAvatar(avatarImage) {
+  try {
+    const response = await fetch("/api/user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ avatarImage })
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `Failed to save avatar (${response.status})`);
+    }
+
+    const payload = await response.json();
+    updateAccountMenuDisplay({
+      username: payload.username,
+      authProvider: accountProvider?.textContent?.trim()?.toLowerCase() || "unknown",
+      avatarImage: payload.avatarImage
+    });
+    statusMsg.textContent = "Avatar updated.";
+  } catch (error) {
+    console.error("Could not save avatar:", error);
+    statusMsg.textContent = error.message || "Could not save avatar.";
+  }
+}
+
+if (accountAvatarInput) {
+  accountAvatarInput.addEventListener("change", async () => {
+    const file = accountAvatarInput.files?.[0] || null;
+    if (!file) {
+      return;
+    }
+
+    try {
+      pendingAvatarImage = await fileToAvatarDataUrl(file);
+      setAccountAvatar(pendingAvatarImage);
+      statusMsg.textContent = "";
+      // Auto-save avatar immediately
+      await saveAvatar(pendingAvatarImage);
+      pendingAvatarImage = null;
+      if (accountAvatarInput) {
+        accountAvatarInput.value = "";
+      }
+    } catch (error) {
+      console.error("Could not prepare avatar image:", error);
+      statusMsg.textContent = "Could not read selected avatar image.";
+      pendingAvatarImage = null;
+    }
   });
 }
 
@@ -1540,7 +1657,7 @@ async function initAuth() {
     if (!response.ok) {
       return authState;
     }
-    const { isAuthenticated, displayName, username, loginUrl, logoutUrl, authProvider } = await response.json();
+    const { isAuthenticated, displayName, username, avatarImage, loginUrl, logoutUrl, authProvider } = await response.json();
     authState = { isAuthenticated: Boolean(isAuthenticated), isLocalHost, username };
 
     if (signInLink && loginUrl) {
@@ -1558,7 +1675,7 @@ async function initAuth() {
         signInLink.hidden = true;
       }
 
-      updateAccountMenuDisplay({ username, authProvider });
+      updateAccountMenuDisplay({ username, authProvider, avatarImage });
 
       if (!username && usernameModal) {
         showUsernameModal();
