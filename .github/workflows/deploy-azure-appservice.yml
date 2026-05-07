@@ -23,15 +23,27 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Prune dev dependencies
-        run: npm prune --omit=dev
+      - name: Prepare deployment package
+        run: |
+          mkdir -p deploy
+          rsync -av \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='node_modules/' \
+            --exclude='infra/' \
+            --exclude='data/' \
+            --exclude='*.log' \
+            --exclude='.deployment' \
+            --exclude='deploy.cmd' \
+            --exclude='tmp-*.js' \
+            ./ deploy/
+          cd deploy
+          npm ci --omit=dev
+          zip -r ../deploy.zip .
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: .
+          package: deploy.zip
