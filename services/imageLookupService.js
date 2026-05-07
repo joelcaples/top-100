@@ -14,14 +14,38 @@ const STORAGE_CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const STORAGE_CONTAINER = process.env.AZURE_STORAGE_CONTAINER || "generated-images";
 const USE_BLOB_STORAGE = Boolean(STORAGE_CONNECTION_STRING);
 const CATEGORY_QUERY_HINTS = {
+  film: ["movie", "poster", "still", "cinema"],
+  movie: ["film", "poster", "still", "cinema"],
   music: ["band", "musician", "logo", "album cover"],
   movies: ["film", "poster", "still"],
   sports: ["athlete", "team", "action"],
   gaming: ["game", "character", "art"]
 };
 
+const TAG_ALIASES = {
+  films: "film",
+  movie: "film",
+  movies: "film",
+  cinema: "film",
+  motionpicture: "film",
+  motionpictures: "film"
+};
+
 const GENERIC_STOCK_TERMS = /(stock|vector|illustration|clipart|template|background)/;
 let containerClientPromise;
+
+function parseTags(value) {
+  return (value || "")
+    .split(/[;,|/]+/) 
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function normaliseTag(tag) {
+  const token = (tag || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return TAG_ALIASES[token] || token;
+}
 
 async function getContainerClient() {
   if (!USE_BLOB_STORAGE) {
@@ -43,13 +67,20 @@ async function getContainerClient() {
 function buildQueries(entry) {
   const queries = new Set();
   const name = entry.name.trim();
-  const category = entry.category.trim();
-  const categoryKey = category.toLowerCase();
-  const hints = CATEGORY_QUERY_HINTS[categoryKey] || [];
+  const tags = parseTags(entry.category);
+  const canonicalTags = [...new Set(tags.map((tag) => normaliseTag(tag)).filter(Boolean))];
+  const tagsPhrase = tags.join(" ").trim();
+  const hintTags = canonicalTags.length ? canonicalTags : [normaliseTag(entry.category.trim())];
+  const hints = hintTags.flatMap((tag) => CATEGORY_QUERY_HINTS[tag.toLowerCase()] || []);
 
-  if (name && category) {
-    queries.add(`${name} ${category}`);
-    queries.add(`"${name}" ${category}`);
+  if (name && tagsPhrase) {
+    queries.add(`${name} ${tagsPhrase}`);
+    queries.add(`"${name}" ${tagsPhrase}`);
+  }
+
+  for (const tag of tags) {
+    queries.add(`${name} ${tag}`);
+    queries.add(`"${name}" ${tag}`);
   }
 
   for (const hint of hints) {

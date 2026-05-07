@@ -530,7 +530,8 @@ function openEditModal(cell) {
 
     if (modalSearchInput) {
       const name = cell.querySelector(".title")?.textContent?.trim() || "";
-      modalSearchInput.value = name;
+      const tags = cell.querySelector(".tag")?.textContent?.trim() || "";
+      modalSearchInput.value = [name, tags].filter(Boolean).join(" ").trim();
     }
     if (modalSearchResults) {
       modalSearchResults.innerHTML = "";
@@ -976,7 +977,7 @@ function renderAddCell() {
     </button>
     <div class="add-form">
       <input class="add-name" type="text" placeholder="Item name" maxlength="200" />
-      <input class="add-category" type="text" placeholder="Category" maxlength="80" />
+      <input class="add-category" type="text" placeholder="Tags" maxlength="80" />
     </div>
   `;
 
@@ -1029,6 +1030,11 @@ function renderAddCell() {
       newCell.dataset.id = newEntry.id;
       newCell.draggable = true;
       topGrid.insertBefore(newCell, addCell);
+
+      // New entries should begin in image mode immediately.
+      ensureEntryImage(newCell).catch((error) => {
+        console.error("Could not initialize image mode for new entry:", error);
+      });
 
       // Check if we've hit 100 items
       const countRes = await fetch("/api/listflair?size=1");
