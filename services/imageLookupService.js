@@ -433,15 +433,51 @@ async function searchWebImages(query) {
     throw new Error(`Image search failed (${imgRes.status})`);
   }
 
+  function normaliseResultUrl(url) {
+    if (typeof url !== "string") {
+      return "";
+    }
+
+    const trimmed = url.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    if (trimmed.startsWith("//")) {
+      return `https:${trimmed}`;
+    }
+
+    if (trimmed.startsWith("http://")) {
+      return `https://${trimmed.slice("http://".length)}`;
+    }
+
+    if (trimmed.startsWith("https://")) {
+      return trimmed;
+    }
+
+    return "";
+  }
+
   const data = await imgRes.json();
   return (data.results || [])
-    .filter((r) => r.thumbnail || r.image)
+    .map((r) => {
+      const fetchUrl = normaliseResultUrl(r.image || r.thumbnail || "");
+      const thumbnailUrl = normaliseResultUrl(r.thumbnail || r.image || "");
+      const sourceUrl = normaliseResultUrl(r.url || "");
+      return {
+        title: r.title || "",
+        thumbnailUrl,
+        fetchUrl,
+        sourceUrl: sourceUrl || null
+      };
+    })
+    .filter((r) => r.thumbnailUrl || r.fetchUrl)
     .slice(0, 24)
     .map((r) => ({
-      title: r.title || "",
-      thumbnailUrl: r.thumbnail || r.image || "",
-      fetchUrl: r.image || r.thumbnail || "",
-      sourceUrl: r.url || null
+      title: r.title,
+      thumbnailUrl: r.thumbnailUrl,
+      fetchUrl: r.fetchUrl,
+      sourceUrl: r.sourceUrl
     }));
 }
 

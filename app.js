@@ -847,8 +847,8 @@ async function handlePickImage(btn) {
     t.disabled = true;
   });
   btn.classList.add("detail-modal__search-thumb--loading");
-  // Show the selected candidate immediately so the modal reflects the user's choice.
-  showImageMode(cell, fetchUrl || thumbnailUrl || LOADING_IMAGE_SRC);
+  // Use local loading image while server caches the selected remote image.
+  showImageMode(cell, LOADING_IMAGE_SRC);
 
   try {
     const response = await fetch(`/api/entries/${id}/image/pick`, {
@@ -858,7 +858,16 @@ async function handlePickImage(btn) {
     });
 
     if (!response.ok) {
-      throw new Error(`Pick failed: ${response.status}`);
+      let errorMessage = `Pick failed: ${response.status}`;
+      try {
+        const errorPayload = await response.json();
+        if (errorPayload?.error) {
+          errorMessage = `Pick failed: ${response.status} (${errorPayload.error})`;
+        }
+      } catch {
+        // Ignore parse errors and fall back to status-only message.
+      }
+      throw new Error(errorMessage);
     }
 
     const payload = await response.json();
