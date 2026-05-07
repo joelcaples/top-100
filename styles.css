@@ -271,7 +271,10 @@ body {
   cursor: pointer;
   box-shadow: var(--shadow-soft);
   transition: all 200ms ease;
-  position: relative;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
 }
 
 .account-icon-btn:hover {
@@ -1255,6 +1258,11 @@ body.modal-open {
   .hero {
     padding: 1rem;
     border-radius: 4px;
+  }
+
+  .account-icon-btn {
+    top: 0.75rem;
+    right: 0.75rem;
   }
 
   .grid-wrap {
