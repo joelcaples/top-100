@@ -72,10 +72,12 @@ resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
 }
 
 resource "azurerm_mssql_database" "main" {
-  name      = local.sql_database_name
-  server_id = azurerm_mssql_server.main.id
-  sku_name  = "Basic"
-  tags      = var.tags
+  name                        = local.sql_database_name
+  server_id                   = azurerm_mssql_server.main.id
+  sku_name                    = "GP_S_Gen5_1"
+  min_capacity                = 0.5
+  auto_pause_delay_in_minutes = 60
+  tags                        = var.tags
 }
 
 locals {
@@ -103,5 +105,9 @@ resource "azurerm_linux_web_app" "main" {
     AZURE_SQL_CONNECTION_STRING    = local.sql_connection_string
     AZURE_STORAGE_CONNECTION_STRING = azurerm_storage_account.main.primary_connection_string
     AZURE_STORAGE_CONTAINER        = azurerm_storage_container.generated_images.name
+  }
+
+  lifecycle {
+    ignore_changes = [sticky_settings]
   }
 }
