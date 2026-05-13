@@ -14,11 +14,11 @@ resource "random_password" "sql_admin_password" {
 
 locals {
   base_name            = lower(replace("${var.project_name}-${var.environment}", "/[^a-z0-9-]/", ""))
-  sql_server_name      = substr("${replace(local.base_name, "-", "")}-sql-${random_string.suffix.result}", 0, 63)
-  app_service_name     = substr("${replace(local.base_name, "-", "")}-app-${random_string.suffix.result}", 0, 60)
-  app_service_plan     = substr("${replace(local.base_name, "-", "")}-plan-${random_string.suffix.result}", 0, 60)
-  sql_database_name    = substr("${replace(local.base_name, "-", "")}-db", 0, 128)
-  storage_account_name = substr(replace("${var.project_name}${var.environment}${random_string.suffix.result}", "/[^a-z0-9]/", ""), 0, 24)
+  sql_server_name      = substr("${local.base_name}-sql", 0, 63)
+  app_service_name     = substr("${local.base_name}-app", 0, 60)
+  app_service_plan     = substr("${local.base_name}-plan", 0, 60)
+  sql_database_name    = substr("${local.base_name}-db", 0, 128)
+  storage_account_name = substr(replace("${var.project_name}${var.environment}", "/[^a-z0-9]/", ""), 0, 24)
 }
 
 resource "azurerm_resource_group" "main" {

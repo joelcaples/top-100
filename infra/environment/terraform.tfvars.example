@@ -1,5 +1,5 @@
 project_name          = "listflair"
-environment           = "prod"
+environment           = "prd"
 location              = "centralus"
 app_service_sku_name  = "B1"
 node_version          = "20-lts"
@@ -9,5 +9,5 @@ storage_container_name = "generated-images"
 tags = {
   managed_by = "terraform"
   app        = "listflair"
-  environment = "prod"
+  environment = "prd"
 }
