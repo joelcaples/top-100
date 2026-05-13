@@ -1,6 +1,6 @@
 project_name          = "listflair"
 environment           = "prod"
-location              = "eastus"
+location              = "centralus"
 app_service_sku_name  = "B1"
 node_version          = "20-lts"
 sql_admin_username    = "sqladminuser"
