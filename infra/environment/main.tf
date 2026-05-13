@@ -18,7 +18,7 @@ locals {
   app_service_name     = substr("${local.base_name}-app", 0, 60)
   app_service_plan     = substr("${local.base_name}-plan", 0, 60)
   sql_database_name    = substr("${local.base_name}-db", 0, 128)
-  storage_account_name = substr(replace("${var.project_name}${var.environment}", "/[^a-z0-9]/", ""), 0, 24)
+  storage_account_name = substr(replace("${local.base_name}-st", "-", ""), 0, 24)
 }
 
 resource "azurerm_resource_group" "main" {
@@ -101,13 +101,32 @@ resource "azurerm_linux_web_app" "main" {
   }
 
   app_settings = {
-    WEBSITES_PORT                  = "3000"
-    AZURE_SQL_CONNECTION_STRING    = local.sql_connection_string
+    WEBSITES_PORT                   = "3000"
+    AZURE_SQL_CONNECTION_STRING     = local.sql_connection_string
     AZURE_STORAGE_CONNECTION_STRING = azurerm_storage_account.main.primary_connection_string
-    AZURE_STORAGE_CONTAINER        = azurerm_storage_container.generated_images.name
+    AZURE_STORAGE_CONTAINER         = azurerm_storage_container.generated_images.name
+    GITHUB_CLIENT_ID                = var.github_client_id
+    GITHUB_CLIENT_SECRET            = var.github_client_secret
+  }
+
+  auth_settings_v2 {
+    auth_enabled           = true
+    require_authentication = false
+    unauthenticated_action = "AllowAnonymous"
+    default_provider       = "github"
+
+    github_v2 {
+      client_id                  = var.github_client_id
+      client_secret_setting_name = "GITHUB_CLIENT_SECRET"
+    }
+
+    login {
+      token_store_enabled = true
+    }
   }
 
   lifecycle {
     ignore_changes = [sticky_settings]
   }
 }
+

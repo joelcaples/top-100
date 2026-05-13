@@ -11,3 +11,6 @@ tags = {
   app        = "listflair"
   environment = "prd"
 }
+
+github_client_id    = "<your-github-client-id>"
+github_client_secret = "<your-github-client-secret>"

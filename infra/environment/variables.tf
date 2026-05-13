@@ -48,3 +48,13 @@ variable "tags" {
     app        = "listflair"
   }
 }
+
+variable "github_client_id" {
+  description = "GitHub OAuth app client ID for Easy Auth."
+  type        = string
+}
+
+variable "github_client_secret" {
+  description = "GitHub OAuth app client secret for Easy Auth."
+  type        = string
+}

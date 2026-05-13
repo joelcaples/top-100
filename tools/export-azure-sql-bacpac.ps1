@@ -15,7 +15,7 @@ param(
     [string]$ResourceGroup = "listflair-prod-rg",
     [string]$SqlServer = "listflairprod-sql-zag6fb",
     [string]$Database = "listflairprod-db",
-    [string]$StorageAccount = "listflairprodzag6fb",
+    [string]$StorageAccount = "listflairprdst",
     [string]$Container = "generated-images",
     [string]$AdminUser = "sqladminuser",
     [string]$LocalDownloadPath = "./$($Database)-$(Get-Date -Format 'yyyyMMdd-HHmmss').bacpac",
